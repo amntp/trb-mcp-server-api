@@ -1725,9 +1725,23 @@ async function main() {
           res.status(401).json({ error: "Could not resolve user identity from token" });
           return;
         }
-        storeViewerState(user.keys, (req.body ?? {}) as ViewerState, user.email);
-        console.log(`[viewer-state] stored for keys=[${user.keys.join(", ")}]`);
-        res.json({ ok: true, storedAt: new Date().toISOString() });
+        const viewerState = (req.body ?? {}) as ViewerState;
+
+storeViewerState(user.keys, viewerState, user.email);
+
+const tgaAnalysis = analyzeTgaSelection(
+  viewerState.selection ?? []
+);
+
+console.log(
+  `[viewer-state] stored for keys=[${user.keys.join(", ")}]`
+);
+
+res.json({
+  ok: true,
+  storedAt: new Date().toISOString(),
+  tgaAnalysis
+});
       } catch (error) {
         res.status(500).json({ error: String(error) });
       }
