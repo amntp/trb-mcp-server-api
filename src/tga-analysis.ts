@@ -14,51 +14,115 @@ export type TgaComponentType =
   | "damper_generic"
   | "unknown";
 
+
 export interface TgaAnalysis {
-  type: TgaComponentType;
-  label: string;
 
-  ifcType?: string;
-  predefinedType?: string;
+  type:
+    TgaComponentType;
 
-  guid?: string;
-  runtimeId?: number;
+  label:
+    string;
 
-  name?: string;
-  description?: string;
-  objectType?: string;
-  tag?: string;
-  layer?: string;
+  ifcType?:
+    string;
 
-  modelName?: string;
-  system?: string;
-  storey?: string;
+  predefinedType?:
+    string;
 
-  shape?: "rectangular" | "round";
+  guid?:
+    string;
 
-  widthMm?: number;
-  heightMm?: number;
-  diameterMm?: number;
-  lengthMm?: number;
-  insulationMm?: number;
+  runtimeId?:
+    number;
 
-  airflowLs?: number;
-  airflowM3h?: number;
+  name?:
+    string;
 
-  areaM2?: number;
-  velocityMs?: number;
+  description?:
+    string;
 
-  pressureLossPa?: number;
-  zeta?: number;
+  objectType?:
+    string;
 
-  quantityUnit?: "m" | "m²" | "St.";
-  quantity?: number;
-  quantityNote?: string;
+  manufacturer?:
+    string;
 
-  confidence: "high" | "medium" | "low";
-  matchedBy: string[];
+  productType?:
+    string;
 
-  rawProperties: Record<string, unknown>;
+  tag?:
+    string;
+
+  layer?:
+    string;
+
+  modelName?:
+    string;
+
+  system?:
+    string;
+
+  storey?:
+    string;
+
+  shape?:
+    "rectangular" |
+    "round";
+
+  widthMm?:
+    number;
+
+  heightMm?:
+    number;
+
+  diameterMm?:
+    number;
+
+  lengthMm?:
+    number;
+
+  insulationMm?:
+    number;
+
+  airflowLs?:
+    number;
+
+  airflowM3h?:
+    number;
+
+  areaM2?:
+    number;
+
+  velocityMs?:
+    number;
+
+  pressureLossPa?:
+    number;
+
+  zeta?:
+    number;
+
+  quantityUnit?:
+    "m" |
+    "m²" |
+    "St.";
+
+  quantity?:
+    number;
+
+  quantityNote?:
+    string;
+
+  confidence:
+    "high" |
+    "medium" |
+    "low";
+
+  matchedBy:
+    string[];
+
+  rawProperties:
+    Record<string, unknown>;
 }
 
 
@@ -66,21 +130,47 @@ export interface TgaAnalysis {
    NORMALISIERUNG
 ========================================================= */
 
-function normalizeText(value: unknown): string {
-  return String(value ?? "")
+function n(
+  value: unknown
+): string {
+
+  return String(
+    value ??
+    ""
+  )
     .trim()
     .toLowerCase()
-    .replace(/ä/g, "ae")
-    .replace(/ö/g, "oe")
-    .replace(/ü/g, "ue")
-    .replace(/ß/g, "ss")
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .replace(/\s+/g, " ");
+    .replace(
+      /ä/g,
+      "ae"
+    )
+    .replace(
+      /ö/g,
+      "oe"
+    )
+    .replace(
+      /ü/g,
+      "ue"
+    )
+    .replace(
+      /ß/g,
+      "ss"
+    )
+    .replace(
+      /[_\-\/]+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    );
 }
 
 
-function isPrimitive(value: unknown): boolean {
+function primitive(
+  value: unknown
+): boolean {
+
   return (
     value === null ||
     value === undefined ||
@@ -92,162 +182,262 @@ function isPrimitive(value: unknown): boolean {
 
 
 /* =========================================================
-   TRIMBLE PROPERTIES FLACH ZIEHEN
+   PROPERTY FLATTENING
 ========================================================= */
 
-function flattenProperties(
+function flatten(
   value: unknown,
   prefix = "",
   out: Record<string, unknown> = {}
 ): Record<string, unknown> {
 
-  if (value === null || value === undefined) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+
     return out;
   }
 
-  if (Array.isArray(value)) {
 
-    value.forEach((item, index) => {
-      flattenProperties(
+  if (
+    Array.isArray(
+      value
+    )
+  ) {
+
+    value.forEach(
+      (
         item,
-        prefix ? `${prefix}.${index}` : String(index),
-        out
-      );
-    });
+        index
+      ) => {
+
+        flatten(
+          item,
+          prefix
+            ? \`\${prefix}.\${index}\`
+            : String(index),
+          out
+        );
+      }
+    );
+
 
     return out;
   }
 
-  if (typeof value !== "object") {
+
+  if (
+    typeof value !==
+    "object"
+  ) {
 
     if (prefix) {
-      out[prefix] = value;
+
+      out[prefix] =
+        value;
     }
 
     return out;
   }
 
-  const obj = value as Record<string, unknown>;
+
+  const obj =
+    value as
+      Record<
+        string,
+        unknown
+      >;
 
 
-  /*
-   * Trimble:
-   * { name: "Geom-Side 1 (mm)", value: "250" }
-   */
   if (
-    typeof obj.name === "string" &&
-    Object.prototype.hasOwnProperty.call(obj, "value") &&
-    isPrimitive(obj.value)
+    typeof obj.name ===
+      "string" &&
+    Object.prototype
+      .hasOwnProperty
+      .call(
+        obj,
+        "value"
+      ) &&
+    primitive(
+      obj.value
+    )
   ) {
 
-    const propertyName = String(obj.name).trim();
+    const key =
+      String(
+        obj.name
+      ).trim();
 
-    if (propertyName) {
+
+    if (key) {
 
       if (
-        !Object.prototype.hasOwnProperty.call(
-          out,
-          propertyName
-        )
+        !Object.prototype
+          .hasOwnProperty
+          .call(
+            out,
+            key
+          )
       ) {
-        out[propertyName] = obj.value;
+
+        out[key] =
+          obj.value;
       }
+
 
       if (prefix) {
-        out[`${prefix}.${propertyName}`] = obj.value;
+
+        out[
+          \`\${prefix}.\${key}\`
+        ] =
+          obj.value;
       }
     }
+
 
     return out;
   }
 
 
-  /*
-   * Trimble Property Group:
-   * Pset MEP usw.
-   */
   if (
-    typeof obj.name === "string" &&
-    Array.isArray(obj.props)
+    typeof obj.name ===
+      "string" &&
+    Array.isArray(
+      obj.props
+    )
   ) {
 
-    const groupName = String(obj.name).trim();
+    const groupName =
+      String(
+        obj.name
+      ).trim();
 
-    for (const prop of obj.props) {
+
+    for (
+      const item
+      of obj.props
+    ) {
 
       if (
-        prop &&
-        typeof prop === "object"
+        !item ||
+        typeof item !==
+          "object"
       ) {
 
-        const p = prop as Record<string, unknown>;
+        continue;
+      }
 
-        if (
-          typeof p.name === "string" &&
-          Object.prototype.hasOwnProperty.call(
-            p,
+
+      const prop =
+        item as
+          Record<
+            string,
+            unknown
+          >;
+
+
+      if (
+        typeof prop.name !==
+          "string" ||
+        !Object.prototype
+          .hasOwnProperty
+          .call(
+            prop,
             "value"
           )
-        ) {
+      ) {
 
-          const propertyName = String(p.name).trim();
+        continue;
+      }
 
-          if (propertyName) {
 
-            if (
-              !Object.prototype.hasOwnProperty.call(
-                out,
-                propertyName
-              )
-            ) {
-              out[propertyName] = p.value;
-            }
+      const key =
+        String(
+          prop.name
+        ).trim();
 
-            if (groupName) {
-              out[
-                `${groupName}.${propertyName}`
-              ] = p.value;
-            }
-          }
-        }
+
+      if (!key) {
+
+        continue;
+      }
+
+
+      if (
+        !Object.prototype
+          .hasOwnProperty
+          .call(
+            out,
+            key
+          )
+      ) {
+
+        out[key] =
+          prop.value;
+      }
+
+
+      if (
+        groupName
+      ) {
+
+        out[
+          \`\${groupName}.\${key}\`
+        ] =
+          prop.value;
       }
     }
   }
 
 
   for (
-    const [key, child]
-    of Object.entries(obj)
+    const [
+      key,
+      child
+    ]
+    of Object.entries(
+      obj
+    )
   ) {
 
     if (
       key === "props" &&
-      Array.isArray(child)
+      Array.isArray(
+        child
+      )
     ) {
+
       continue;
     }
 
+
     const path =
       prefix
-        ? `${prefix}.${key}`
+        ? \`\${prefix}.\${key}\`
         : key;
+
 
     if (
       child !== null &&
-      typeof child === "object"
+      typeof child ===
+        "object"
     ) {
 
-      flattenProperties(
+      flatten(
         child,
         path,
         out
       );
+    }
 
-    } else {
+    else {
 
-      out[path] = child;
+      out[path] =
+        child;
     }
   }
+
 
   return out;
 }
@@ -257,203 +447,274 @@ function flattenProperties(
    PROPERTY LOOKUP
 ========================================================= */
 
-function findValue(
-  flat: Record<string, unknown>,
-  aliases: string[]
+function find(
+  flat:
+    Record<
+      string,
+      unknown
+    >,
+  aliases:
+    string[]
 ): unknown {
 
-  const entries = Object.entries(flat);
+  const entries =
+    Object.entries(
+      flat
+    );
 
 
-  /*
-   * Exakter Name zuerst.
-   */
-  for (const alias of aliases) {
+  for (
+    const alias
+    of aliases
+  ) {
 
-    const wanted = normalizeText(alias);
-
-    const found =
-      entries.find(([key]) => {
-
-        const last =
-          normalizeText(
-            key.split(".").pop()
-          );
-
-        return last === wanted;
-      });
-
-    if (found) {
-      return found[1];
-    }
-  }
+    const wanted =
+      n(alias);
 
 
-  /*
-   * Dann Pfad / Teiltreffer.
-   */
-  for (const alias of aliases) {
-
-    const wanted = normalizeText(alias);
-
-    const found =
-      entries.find(([key]) =>
-        normalizeText(key).includes(wanted)
+    const result =
+      entries.find(
+        ([key]) =>
+          n(
+            key
+              .split(".")
+              .pop()
+          ) ===
+          wanted
       );
 
-    if (found) {
-      return found[1];
+
+    if (result) {
+
+      return result[1];
     }
   }
+
+
+  for (
+    const alias
+    of aliases
+  ) {
+
+    const wanted =
+      n(alias);
+
+
+    const result =
+      entries.find(
+        ([key]) =>
+          n(key)
+            .includes(
+              wanted
+            )
+      );
+
+
+    if (result) {
+
+      return result[1];
+    }
+  }
+
 
   return undefined;
 }
 
 
-function textValue(
-  flat: Record<string, unknown>,
-  aliases: string[]
+function text(
+  flat:
+    Record<
+      string,
+      unknown
+    >,
+  aliases:
+    string[]
 ): string | undefined {
 
   const value =
-    findValue(flat, aliases);
+    find(
+      flat,
+      aliases
+    );
+
 
   if (
     value === undefined ||
     value === null
   ) {
+
     return undefined;
   }
 
-  const text = String(value).trim();
 
-  return text || undefined;
+  const s =
+    String(
+      value
+    ).trim();
+
+
+  return s ||
+    undefined;
 }
 
 
-function numberValue(
+function numeric(
   value: unknown
 ): number | undefined {
 
   if (
-    typeof value === "number" &&
-    Number.isFinite(value)
+    typeof value ===
+      "number" &&
+    Number.isFinite(
+      value
+    )
   ) {
+
     return value;
   }
 
+
   if (
-    value === null ||
-    value === undefined
+    value === undefined ||
+    value === null
   ) {
+
     return undefined;
   }
 
-  let text = String(value).trim();
 
-  if (!text) {
+  const s =
+    String(
+      value
+    )
+      .trim()
+      .replace(
+        /\s/g,
+        ""
+      )
+      .replace(
+        ",",
+        "."
+      )
+      .replace(
+        /[^\d.+-]/g,
+        ""
+      );
+
+
+  if (!s) {
+
     return undefined;
   }
 
-  text = text
-    .replace(/\s/g, "")
-    .replace(",", ".")
-    .replace(/[^\d.+-]/g, "");
 
-  const n =
-    Number.parseFloat(text);
+  const v =
+    Number.parseFloat(
+      s
+    );
 
-  return Number.isFinite(n)
-    ? n
+
+  return Number.isFinite(
+    v
+  )
+    ? v
     : undefined;
 }
 
 
-function numberByAliases(
-  flat: Record<string, unknown>,
-  aliases: string[]
+function num(
+  flat:
+    Record<
+      string,
+      unknown
+    >,
+  aliases:
+    string[]
 ): number | undefined {
 
-  return numberValue(
-    findValue(flat, aliases)
+  return numeric(
+    find(
+      flat,
+      aliases
+    )
   );
 }
 
 
-function searchableText(
-  flat: Record<string, unknown>
+function allText(
+  flat:
+    Record<
+      string,
+      unknown
+    >
 ): string {
 
-  return normalizeText(
-    Object.entries(flat)
+  return n(
+    Object.entries(
+      flat
+    )
       .map(
-        ([key, value]) =>
-          `${key} ${String(value ?? "")}`
+        (
+          [
+            key,
+            value
+          ]
+        ) =>
+          \`\${key} \${String(
+            value ??
+            ""
+          )}\`
       )
       .join(" ")
   );
 }
 
 
-function containsAny(
-  text: string,
-  words: string[]
+function has(
+  value: string,
+  terms: string[]
 ): boolean {
 
-  return words.some(
-    word =>
-      text.includes(
-        normalizeText(word)
+  return terms.some(
+    (
+      term
+    ) =>
+      value.includes(
+        n(term)
       )
   );
 }
 
 
 /* =========================================================
-   ABMESSUNGEN
+   DIMENSIONS
 ========================================================= */
 
-function dimensionText(
-  flat: Record<string, unknown>
-): string | undefined {
-
-  return textValue(
-    flat,
-    [
-      "ConnectionSize_mm",
-      "ConnectionSize",
-      "Connection Size",
-      "NominalSize",
-      "Nominal Size",
-      "DuctSize",
-      "Duct Size",
-      "Size",
-      "Dimension",
-      "Dimensions",
-      "Abmessung",
-      "Abmessungen",
-      "Anschlussgroesse",
-      "Anschlussgröße"
-    ]
-  );
-}
-
-
 function parseDimensions(
-  flat: Record<string, unknown>
+  flat:
+    Record<
+      string,
+      unknown
+    >
 ): {
-  shape?: "rectangular" | "round";
-  widthMm?: number;
-  heightMm?: number;
-  diameterMm?: number;
+
+  shape?:
+    "rectangular" |
+    "round";
+
+  widthMm?:
+    number;
+
+  heightMm?:
+    number;
+
+  diameterMm?:
+    number;
+
 } {
 
-  /*
-   * Trimble Nova:
-   * Geom-Side 1 / Geom-Side 2
-   */
   let widthMm =
-    numberByAliases(
+    num(
       flat,
       [
         "Geom-Side 1 (mm)",
@@ -461,32 +722,28 @@ function parseDimensions(
         "Width_mm",
         "Width",
         "Breite",
-        "DuctWidth",
-        "Duct Width",
-        "b_mm"
+        "Duct Width"
       ]
     );
 
 
   let heightMm =
-    numberByAliases(
+    num(
       flat,
       [
         "Geom-Side 2 (mm)",
         "Geom-Side 2",
         "Height_mm",
         "Height",
-        "Hoehe",
         "Höhe",
-        "DuctHeight",
-        "Duct Height",
-        "h_mm"
+        "Hoehe",
+        "Duct Height"
       ]
     );
 
 
   let diameterMm =
-    numberByAliases(
+    num(
       flat,
       [
         "Geom-Diameter (mm)",
@@ -494,7 +751,6 @@ function parseDimensions(
         "Diameter_mm",
         "Diameter",
         "Durchmesser",
-        "NominalDiameter",
         "Nominal Diameter",
         "DN"
       ]
@@ -502,136 +758,162 @@ function parseDimensions(
 
 
   const raw =
-    dimensionText(flat);
+    text(
+      flat,
+      [
+        "ConnectionSize_mm",
+        "ConnectionSize",
+        "Connection Size",
+        "NominalSize",
+        "Nominal Size",
+        "DuctSize",
+        "Duct Size",
+        "Dimension",
+        "Dimensions",
+        "Abmessung",
+        "Abmessungen",
+        "Size"
+      ]
+    );
 
 
   if (raw) {
 
-    const text =
+    const size =
       raw
-        .replace(",", ".")
-        .replace(/×/g, "x")
-        .replace(/\//g, "x")
-        .trim();
+        .replace(
+          ",",
+          "."
+        )
+        .replace(
+          /×/g,
+          "x"
+        )
+        .replace(
+          /\//g,
+          "x"
+        );
 
 
-    const roundMatch =
-      text.match(
+    const round =
+      size.match(
         /(?:ø|⌀|dn\s*)\s*(\d+(?:\.\d+)?)/i
       );
 
 
     if (
-      roundMatch &&
-      diameterMm === undefined
+      round &&
+      diameterMm ===
+        undefined
     ) {
+
       diameterMm =
-        Number(roundMatch[1]);
+        Number(
+          round[1]
+        );
     }
 
 
-    const rectangularMatch =
-      text.match(
-        /(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/i
+    const rect =
+      size.match(
+        /(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/i
       );
 
 
-    if (rectangularMatch) {
-
-      if (widthMm === undefined) {
-        widthMm =
-          Number(rectangularMatch[1]);
-      }
-
-      if (heightMm === undefined) {
-        heightMm =
-          Number(rectangularMatch[2]);
-      }
-    }
-
-
-    /*
-     * Einzelwert = meistens Rundrohr.
-     */
-    if (
-      !roundMatch &&
-      !rectangularMatch &&
-      diameterMm === undefined &&
-      /^\s*\d+(?:\.\d+)?\s*$/.test(text)
-    ) {
-
-      const n = Number(text);
+    if (rect) {
 
       if (
-        n > 0 &&
-        n <= 3000
+        widthMm ===
+          undefined
       ) {
-        diameterMm = n;
+
+        widthMm =
+          Number(
+            rect[1]
+          );
+      }
+
+
+      if (
+        heightMm ===
+          undefined
+      ) {
+
+        heightMm =
+          Number(
+            rect[2]
+          );
       }
     }
   }
 
 
   if (
-    widthMm !== undefined &&
-    heightMm !== undefined
+    widthMm !==
+      undefined &&
+    heightMm !==
+      undefined
   ) {
 
     return {
-      shape: "rectangular",
+
+      shape:
+        "rectangular",
+
       widthMm,
+
       heightMm
     };
   }
 
 
   if (
-    diameterMm !== undefined
+    diameterMm !==
+      undefined
   ) {
 
     return {
-      shape: "round",
+
+      shape:
+        "round",
+
       diameterMm
     };
   }
 
 
   return {
+
     widthMm,
+
     heightMm,
+
     diameterMm
   };
 }
 
 
 /* =========================================================
-   TGA BAUTEILKLASSIFIZIERUNG
+   CLASSIFICATION
 ========================================================= */
 
 function classify(
-  flat: Record<string, unknown>
-): {
-  type: TgaComponentType;
-  label: string;
-  confidence: "high" | "medium" | "low";
-  matchedBy: string[];
-} {
-
-  const text =
-    searchableText(flat);
-
+  flat:
+    Record<
+      string,
+      unknown
+    >
+) {
 
   const ifcType =
-    normalizeText(
-      textValue(
+    n(
+      text(
         flat,
         [
           "class",
           "Common Type",
           "CommonType",
-          "ifcType",
           "IfcType",
-          "entityType",
           "EntityType"
         ]
       )
@@ -639,134 +921,223 @@ function classify(
 
 
   const predefined =
-    normalizeText(
-      textValue(
+    n(
+      text(
         flat,
         [
-          "PredefinedType",
-          "predefinedType"
+          "PredefinedType"
         ]
       )
     );
 
 
-  const nameText =
-    normalizeText(
-      [
-        textValue(flat, [
-          "Product Name",
-          "ProductName",
-          "Name",
-          "name"
-        ]),
-        textValue(flat, [
-          "Product Description",
-          "Description",
-          "description"
-        ]),
-        textValue(flat, [
-          "Product Object Type",
-          "ObjectType",
-          "objectType"
-        ]),
-        textValue(flat, [
+  const layer =
+    n(
+      text(
+        flat,
+        [
           "Layer",
           "Presentation Layer",
           "PresentationLayer"
-        ])
-      ]
-        .filter(Boolean)
-        .join(" ")
+        ]
+      )
     );
 
 
-  const allText =
-    `${text} ${nameText}`;
+  const name =
+    n(
+      text(
+        flat,
+        [
+          "Product Name",
+          "ProductName",
+          "Name"
+        ]
+      )
+    );
 
 
-  const hit = (
-    type: TgaComponentType,
-    label: string,
-    reason: string,
-    confidence:
-      "high" |
-      "medium" |
-      "low" = "high"
-  ) => ({
-    type,
-    label,
-    confidence,
-    matchedBy: [reason]
-  });
+  const description =
+    n(
+      text(
+        flat,
+        [
+          "Product Description",
+          "Description"
+        ]
+      )
+    );
+
+
+  const objectType =
+    n(
+      text(
+        flat,
+        [
+          "Product Object Type",
+          "ObjectType"
+        ]
+      )
+    );
+
+
+  const manufacturer =
+    n(
+      text(
+        flat,
+        [
+          "Fabrikat",
+          "Manufacturer",
+          "Hersteller",
+          "Manufacturer Name",
+          "Product Manufacturer"
+        ]
+      )
+    );
+
+
+  const everything =
+    [
+      allText(
+        flat
+      ),
+      layer,
+      name,
+      description,
+      objectType,
+      manufacturer
+    ]
+      .join(
+        " "
+      );
+
+
+  const result =
+    (
+      type:
+        TgaComponentType,
+
+      label:
+        string,
+
+      reason:
+        string,
+
+      confidence:
+        "high" |
+        "medium" |
+        "low" =
+          "high"
+    ) => ({
+
+      type,
+
+      label,
+
+      confidence,
+
+      matchedBy:
+        [
+          reason
+        ]
+    });
 
 
   /* =====================================================
-     BSK / BRANDSCHUTZKLAPPE
+     BSK
   ===================================================== */
 
   if (
-    containsAny(
-      allText,
+    has(
+      layer,
       [
-        "brandschutzklappe",
-        "brandschutz klappe",
-        "brandklappe",
-        "fire damper",
-        "fire smoke damper",
-        "firedamper",
-        "firesmokedamper",
-        "bsk",
-        "fk90",
-        "fr90",
-        "f90 klappe",
-        "e90 klappe"
+        "L_BSK",
+        "BSK",
+        "Brandschutz"
       ]
-    ) ||
-    predefined.includes("firedamper") ||
-    predefined.includes("firesmokedamper")
+    )
+    ||
+    has(
+      everything,
+      [
+        "Brandschutzklappe",
+        "Brandschutz Klappe",
+        "Brandklappe",
+        "Fire Damper",
+        "Fire Smoke Damper",
+        "Firedamper",
+        "FK2-EU",
+        "FK2 EU",
+        "FK-EU",
+        "FKRS-EU",
+        "FKRS EU",
+        "FK90",
+        "FR90"
+      ]
+    )
+    ||
+    predefined.includes(
+      "firedamper"
+    )
   ) {
 
-    return hit(
+    return result(
       "fire_damper",
       "Brandschutzklappe (BSK)",
-      "Brandschutzklappe / FireDamper erkannt"
+      layer.includes(
+        "bsk"
+      )
+        ? "Layer als BSK erkannt"
+        : "Produktdaten als Brandschutzklappe erkannt",
+      "high"
     );
   }
 
 
   /* =====================================================
-     VSR / VOLUMENSTROMREGLER
+     VSR
   ===================================================== */
 
   if (
-    containsAny(
-      allText,
+    has(
+      layer,
       [
-        "volumenstromregler",
-        "volumenstrom regler",
-        "volumenstrombegrenzer",
-        "volumenstrom begrenzer",
-        "luftmengenregler",
-        "luftmengen regler",
-        "volume flow controller",
-        "air volume controller",
-        "constant air volume",
-        "variable air volume",
-        "control damper",
-        "balancing damper",
-        "regulierklappe",
-        "regelklappe",
-        "vsr",
-        "vav",
-        "cav"
+        "L_VSR",
+        "VSR",
+        "Volumenstromregler"
+      ]
+    )
+    ||
+    has(
+      everything,
+      [
+        "Volumenstromregler",
+        "Volumenstrom Regler",
+        "Volumenstrombegrenzer",
+        "Luftmengenregler",
+        "Volume Flow Controller",
+        "Air Volume Controller",
+        "VARYCONTROL",
+        "VAV",
+        "CAV",
+        "TVR",
+        "TVJ",
+        "TVZ",
+        "TVE",
+        "VFC"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "volume_flow_controller",
       "Volumenstromregler (VSR)",
-      "Volumenstromregler erkannt"
+      layer.includes(
+        "vsr"
+      )
+        ? "Layer als VSR erkannt"
+        : "Produktdaten als VSR erkannt",
+      "high"
     );
   }
 
@@ -776,25 +1147,31 @@ function classify(
   ===================================================== */
 
   if (
-    ifcType.includes("ductsilencer") ||
-    containsAny(
-      allText,
+    has(
+      layer,
       [
-        "schalldaempfer",
-        "schalldämpfer",
-        "kulissenschalldaempfer",
-        "kulissenschalldämpfer",
-        "rohrschalldaempfer",
-        "rohrschalldämpfer",
-        "duct silencer",
-        "silencer",
-        "sound attenuator",
-        "attenuator"
+        "L_Schalldaempfer",
+        "Schalldaempfer",
+        "Silencer"
+      ]
+    )
+    ||
+    has(
+      everything,
+      [
+        "Schalldämpfer",
+        "Schalldaempfer",
+        "Kulissenschalldämpfer",
+        "Kulissenschalldaempfer",
+        "Rohrschalldämpfer",
+        "Rohrschalldaempfer",
+        "Silencer",
+        "Sound Attenuator"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "silencer",
       "Schalldämpfer",
       "Schalldämpfer erkannt"
@@ -802,23 +1179,19 @@ function classify(
   }
 
 
-  /* =====================================================
-     TELLERVENTIL
-  ===================================================== */
+  /* Tellerventil */
 
   if (
-    containsAny(
-      allText,
+    has(
+      everything,
       [
-        "tellerventil",
-        "tellerventile",
-        "disc valve",
-        "discvalve"
+        "Tellerventil",
+        "Disc Valve"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "disc_valve",
       "Tellerventil",
       "Tellerventil erkannt"
@@ -826,53 +1199,61 @@ function classify(
   }
 
 
-  /* =====================================================
-     GITTER
-  ===================================================== */
+  /* Gitter */
 
   if (
-    containsAny(
-      allText,
+    has(
+      layer,
       [
-        "lueftungsgitter",
-        "lüftungsgitter",
-        "luftgitter",
-        "schutzgitter",
-        "wetterschutzgitter",
-        "wsg",
-        "air grille",
-        "grille"
+        "L_Gitter",
+        "Gitter"
+      ]
+    )
+    ||
+    has(
+      everything,
+      [
+        "Lüftungsgitter",
+        "Lueftungsgitter",
+        "Luftgitter",
+        "Wetterschutzgitter",
+        "Schutzgitter",
+        "Air Grille",
+        "Grille"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "grille",
       "Lüftungsgitter",
-      "Lüftungsgitter erkannt"
+      "Gitter erkannt"
     );
   }
 
 
-  /* =====================================================
-     JALOUSIEKLAPPE
-  ===================================================== */
+  /* Jalousieklappe */
 
   if (
-    containsAny(
-      allText,
+    has(
+      layer,
       [
-        "jalousieklappe",
-        "jalousie klappe",
-        "louvre damper",
-        "louver damper",
-        "louver",
-        "jalousie"
+        "L_Jalousieklappe",
+        "Jalousieklappe"
+      ]
+    )
+    ||
+    has(
+      everything,
+      [
+        "Jalousieklappe",
+        "Louver Damper",
+        "Louvre Damper"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "louver_damper",
       "Jalousieklappe",
       "Jalousieklappe erkannt"
@@ -880,25 +1261,21 @@ function classify(
   }
 
 
-  /* =====================================================
-     ABSPERRKLAPPE
-  ===================================================== */
+  /* Absperrklappe */
 
   if (
-    containsAny(
-      allText,
+    has(
+      everything,
       [
-        "absperrklappe",
-        "absperr klappe",
-        "shutoff damper",
-        "shut off damper",
-        "shut-off damper",
-        "drosselklappe"
+        "Absperrklappe",
+        "Shutoff Damper",
+        "Shut Off Damper",
+        "Drosselklappe"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "shutoff_damper",
       "Absperrklappe",
       "Absperrklappe erkannt"
@@ -906,212 +1283,184 @@ function classify(
   }
 
 
-  /* =====================================================
-     ISOLIERUNG
-  ===================================================== */
+  /* Dämmung */
 
   if (
-    ifcType.includes("covering") ||
-    containsAny(
-      allText,
+    ifcType.includes(
+      "covering"
+    )
+    ||
+    has(
+      layer,
       [
-        "isolierung",
-        "daemmung",
-        "dämmung",
-        "waermedaemmung",
-        "wärmedämmung",
-        "kaeltedaemmung",
-        "kältedämmung",
-        "insulation",
-        "duct insulation",
-        "armaflex",
-        "kaiflex",
-        "k flex"
+        "L_Daemmung",
+        "L_Isolierung"
+      ]
+    )
+    ||
+    has(
+      everything,
+      [
+        "Dämmung",
+        "Daemmung",
+        "Isolierung",
+        "Insulation",
+        "Armaflex",
+        "Kaiflex",
+        "K-Flex"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "insulation",
       "Lüftungsdämmung / Isolierung",
-      "Dämmung erkannt",
-      ifcType.includes("covering")
-        ? "high"
-        : "medium"
+      "Dämmung erkannt"
     );
   }
 
 
-  /* =====================================================
-     LUFTAUSLASS
-  ===================================================== */
+  /* Luftauslass */
 
   if (
-    ifcType.includes("airterminal") ||
-    containsAny(
-      allText,
+    ifcType.includes(
+      "airterminal"
+    )
+    ||
+    has(
+      everything,
       [
-        "luftauslass",
-        "luft auslass",
-        "auslass",
-        "drallauslass",
-        "schlitzauslass",
-        "deckenauslass",
-        "bodenauslass",
-        "quellauslass",
-        "air terminal",
-        "airterminal",
-        "diffuser"
+        "Luftauslass",
+        "Drallauslass",
+        "Schlitzauslass",
+        "Deckenauslass",
+        "Quellauslass",
+        "Diffuser",
+        "Air Terminal"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "air_terminal",
       "Luftauslass",
-      "Luftauslass erkannt",
-      ifcType.includes("airterminal")
-        ? "high"
-        : "medium"
+      "Luftauslass erkannt"
     );
   }
 
 
-  /* =====================================================
-     KANALFORMTEIL
-  ===================================================== */
+  /* Formteil */
 
   if (
-    ifcType.includes("ductfitting") ||
-    containsAny(
-      allText,
+    ifcType.includes(
+      "ductfitting"
+    )
+    ||
+    has(
+      everything,
       [
-        "duct fitting",
-        "kanalformteil",
-        "formteil",
-        "bogen",
-        "rohrbogen",
-        "kanalbogen",
-        "abzweig",
-        "t stueck",
-        "t stück",
-        "t piece",
-        "uebergang",
-        "übergang",
-        "reduktion",
-        "reduction",
-        "transition",
-        "bend",
-        "junction",
-        "elbow",
-        "hosenstueck",
-        "hosenstück",
-        "bundkragen",
-        "stutzen"
+        "Kanalformteil",
+        "Duct Fitting",
+        "Bogen",
+        "Abzweig",
+        "T-Stück",
+        "T Stueck",
+        "Übergang",
+        "Uebergang",
+        "Reduktion",
+        "Transition",
+        "Junction",
+        "Elbow",
+        "Bundkragen",
+        "Hosenstück",
+        "Stutzen"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "duct_fitting",
       "Lüftungsformteil",
-      "Kanal-/Rohrformteil erkannt",
-      ifcType.includes("ductfitting")
-        ? "high"
-        : "medium"
+      "Formteil erkannt"
     );
   }
 
 
-  /* =====================================================
-     KANAL / ROHR
-  ===================================================== */
+  /* Kanal / Rohr */
 
   if (
-    ifcType.includes("ductsegment") ||
-    containsAny(
-      allText,
+    ifcType.includes(
+      "ductsegment"
+    )
+    ||
+    has(
+      everything,
       [
-        "duct segment",
-        "luftkanal",
-        "lueftungskanal",
-        "lüftungskanal",
-        "rechteckkanal",
-        "rechteck kanal",
-        "lueftungsrohr",
-        "lüftungsrohr",
-        "wickelfalz",
-        "wickelfalzrohr",
-        "spiral duct",
-        "spirorohr"
+        "Lüftungskanal",
+        "Lueftungskanal",
+        "Luftkanal",
+        "Rechteckkanal",
+        "Lüftungsrohr",
+        "Lueftungsrohr",
+        "Wickelfalzrohr",
+        "Spirorohr",
+        "Duct Segment"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "duct_segment",
       "Lüftungskanal / Lüftungsrohr",
-      "Lüftungskanal / Rohr erkannt",
-      ifcType.includes("ductsegment")
-        ? "high"
-        : "medium"
+      "Kanal / Rohr erkannt"
     );
   }
 
 
-  /* =====================================================
-     SONSTIGE KLAPPE
-  ===================================================== */
+  /* Allgemeine Klappe */
 
   if (
-    containsAny(
-      allText,
+    has(
+      everything,
       [
-        "klappe",
-        "damper"
+        "Klappe",
+        "Damper"
       ]
     )
   ) {
 
-    return hit(
+    return result(
       "damper_generic",
       "Lüftungsklappe",
-      "Allgemeine Lüftungsklappe erkannt",
+      "allgemeine Klappe erkannt",
       "medium"
     );
   }
 
 
-  /* =====================================================
-     IFCFLOWCONTROLLER FALLBACK
-
-     Nova exportiert BSK/VSR/andere Regler häufig nur
-     als IFCFLOWCONTROLLER.
-
-     Wenn kein Name zur eindeutigen Zuordnung vorhanden ist,
-     zeigen wir wenigstens korrekt:
-     "Luftstrom-Regelbauteil"
-  ===================================================== */
+  /* IFCFLOWCONTROLLER Fallback */
 
   if (
-    ifcType.includes("flowcontroller")
+    ifcType.includes(
+      "flowcontroller"
+    )
   ) {
 
-    return hit(
+    return result(
       "flow_controller_generic",
       "Luftstrom-Regelbauteil",
-      "IFCFLOWCONTROLLER erkannt; Untertyp nicht eindeutig",
+      "IFCFLOWCONTROLLER – Untertyp in übertragenen Daten nicht eindeutig",
       "low"
     );
   }
 
 
-  return {
-    type: "unknown",
-    label: "Nicht eindeutig erkannt",
-    confidence: "low",
-    matchedBy: []
-  };
+  return result(
+    "unknown",
+    "Nicht eindeutig erkannt",
+    "Keine eindeutige Klassifizierung",
+    "low"
+  );
 }
 
 
@@ -1124,62 +1473,60 @@ export function analyzeTgaObject(
 ): TgaAnalysis {
 
   const flat =
-    flattenProperties(input);
+    flatten(
+      input
+    );
 
 
   const classification =
-    classify(flat);
+    classify(
+      flat
+    );
 
 
   const dimensions =
-    parseDimensions(flat);
+    parseDimensions(
+      flat
+    );
 
 
   const ifcType =
-    textValue(
+    text(
       flat,
       [
         "class",
         "Common Type",
         "CommonType",
-        "ifcType",
         "IfcType",
-        "EntityType",
-        "entityType"
+        "EntityType"
       ]
     );
 
 
   const predefinedType =
-    textValue(
+    text(
       flat,
       [
-        "PredefinedType",
-        "predefinedType"
+        "PredefinedType"
       ]
     );
 
 
   const guid =
-    textValue(
+    text(
       flat,
       [
         "GUID (IFC)",
         "GUID IFC",
         "externalId",
         "GlobalId",
-        "globalId",
-        "GUID",
-        "guid",
-        "IfcGuid",
-        "ObjectId",
-        "objectId"
+        "IfcGuid"
       ]
     );
 
 
   const runtimeId =
-    numberByAliases(
+    num(
       flat,
       [
         "runtimeId",
@@ -1189,54 +1536,63 @@ export function analyzeTgaObject(
 
 
   const name =
-    textValue(
+    text(
       flat,
       [
         "Product Name",
         "ProductName",
-        "Name",
-        "name",
-        "ObjectName"
+        "Name"
       ]
     );
 
 
   const description =
-    textValue(
+    text(
       flat,
       [
         "Product Description",
-        "Description",
-        "description"
+        "Description"
       ]
     );
 
 
   const objectType =
-    textValue(
+    text(
       flat,
       [
         "Product Object Type",
-        "ObjectType",
-        "objectType"
+        "ObjectType"
       ]
     );
 
 
-  const tag =
-    textValue(
+  const manufacturer =
+    text(
       flat,
       [
-        "Tag",
-        "tag",
-        "Kennzeichen",
-        "Bauteilkennzeichen"
+        "Fabrikat",
+        "Manufacturer",
+        "Hersteller",
+        "Manufacturer Name",
+        "Product Manufacturer"
+      ]
+    );
+
+
+  const productType =
+    text(
+      flat,
+      [
+        "Product Type",
+        "Type Name",
+        "Typ",
+        "Type"
       ]
     );
 
 
   const layer =
-    textValue(
+    text(
       flat,
       [
         "Layer",
@@ -1246,8 +1602,19 @@ export function analyzeTgaObject(
     );
 
 
+  const tag =
+    text(
+      flat,
+      [
+        "Tag",
+        "Kennzeichen",
+        "Bauteilkennzeichen"
+      ]
+    );
+
+
   const modelName =
-    textValue(
+    text(
       flat,
       [
         "modelName",
@@ -1258,7 +1625,7 @@ export function analyzeTgaObject(
 
 
   const system =
-    textValue(
+    text(
       flat,
       [
         "Tech-Medium",
@@ -1266,39 +1633,31 @@ export function analyzeTgaObject(
         "System",
         "SystemName",
         "System Name",
-        "system",
         "DistributionSystem",
-        "SystemClassification",
-        "System Classification",
-        "Systemtyp",
-        "System Type",
         "Anlage",
         "Anlagenkennzeichen",
-        "MagiCADSystem",
-        "MagiCAD System"
+        "MagiCADSystem"
       ]
     );
 
 
   const storey =
-    textValue(
+    text(
       flat,
       [
         "Storey",
         "BuildingStorey",
-        "Building Storey",
         "Geschoss",
         "Etage",
         "Floor",
         "Level",
-        "ReferenceLevel",
-        "Reference Level"
+        "ReferenceLevel"
       ]
     );
 
 
   const lengthMm =
-    numberByAliases(
+    num(
       flat,
       [
         "Geom-Length (mm)",
@@ -1307,12 +1666,11 @@ export function analyzeTgaObject(
         "Length mm",
         "Laenge_mm",
         "Länge_mm",
-        "DuctLength_mm",
-        "Duct Length mm"
+        "DuctLength_mm"
       ]
     )
     ??
-    numberByAliases(
+    num(
       flat,
       [
         "Length",
@@ -1323,91 +1681,83 @@ export function analyzeTgaObject(
 
 
   const insulationMm =
-    numberByAliases(
+    num(
       flat,
       [
         "Insulation_thickness_mm",
         "InsulationThickness",
         "Insulation Thickness",
-        "Insulation_mm",
         "Daemmstaerke",
         "Dämmstärke",
         "Daemmung_mm",
-        "Dämmung_mm",
-        "Dämmstoffdicke"
+        "Dämmung_mm"
       ]
     );
 
 
   let airflowLs =
-    numberByAliases(
+    num(
       flat,
       [
         "qv_SizingFlow_ls",
         "SizingFlow_ls",
         "AirFlow_ls",
-        "Airflow_l_s",
         "Flow_l_s",
         "Volumenstrom_l_s",
         "Volumenstrom_ls",
-        "DesignFlow_ls",
-        "VolumeFlow_ls",
         "Volume Flow l/s",
-        "Calc-Volume flow (l/s)",
-        "Calc-Air flow (l/s)"
+        "Calc-Volume flow (l/s)"
       ]
     );
 
 
   let airflowM3h =
-    numberByAliases(
+    num(
       flat,
       [
         "qv_SizingFlow_m3h",
         "SizingFlow_m3h",
         "AirFlow_m3h",
-        "Airflow_m3_h",
         "Flow_m3h",
         "Volumenstrom_m3h",
-        "Volumenstrom_m3_h",
-        "DesignFlow_m3h",
-        "VolumeFlow_m3h",
         "Volume Flow m3/h",
-        "Calc-Volume flow (m3/h)",
-        "Calc-Air flow (m3/h)"
+        "Calc-Volume flow (m3/h)"
       ]
     );
 
 
   if (
-    airflowLs !== undefined &&
-    airflowM3h === undefined
+    airflowLs !==
+      undefined &&
+    airflowM3h ===
+      undefined
   ) {
 
     airflowM3h =
-      airflowLs * 3.6;
+      airflowLs *
+      3.6;
   }
 
 
   if (
-    airflowM3h !== undefined &&
-    airflowLs === undefined
+    airflowM3h !==
+      undefined &&
+    airflowLs ===
+      undefined
   ) {
 
     airflowLs =
-      airflowM3h / 3.6;
+      airflowM3h /
+      3.6;
   }
 
 
   const pressureLossPa =
-    numberByAliases(
+    num(
       flat,
       [
         "Calc-Pressure loss (Pa)",
-        "Calc-Pressure Loss (Pa)",
         "Pressure loss (Pa)",
-        "Pressure Loss (Pa)",
-        "PressureLoss",
         "Pressure Loss",
         "Druckverlust",
         "Druckverlust (Pa)"
@@ -1416,13 +1766,12 @@ export function analyzeTgaObject(
 
 
   const zeta =
-    numberByAliases(
+    num(
       flat,
       [
         "Calc-Zeta",
         "Zeta",
-        "ζ",
-        "Zeta Value"
+        "ζ"
       ]
     );
 
@@ -1433,17 +1782,23 @@ export function analyzeTgaObject(
 
 
   if (
-    dimensions.shape === "rectangular" &&
-    dimensions.widthMm !== undefined &&
-    dimensions.heightMm !== undefined
+    dimensions.shape ===
+      "rectangular" &&
+    dimensions.widthMm !==
+      undefined &&
+    dimensions.heightMm !==
+      undefined
   ) {
 
     areaM2 =
+
       (
         dimensions.widthMm /
         1000
       )
+
       *
+
       (
         dimensions.heightMm /
         1000
@@ -1452,22 +1807,31 @@ export function analyzeTgaObject(
 
 
   if (
-    dimensions.shape === "round" &&
-    dimensions.diameterMm !== undefined
+    dimensions.shape ===
+      "round" &&
+    dimensions.diameterMm !==
+      undefined
   ) {
 
-    const diameterM =
+    const d =
       dimensions.diameterMm /
       1000;
 
 
     areaM2 =
+
       Math.PI
+
       *
-      diameterM
+
+      d
+
       *
-      diameterM
+
+      d
+
       /
+
       4;
   }
 
@@ -1484,11 +1848,14 @@ export function analyzeTgaObject(
   ) {
 
     velocityMs =
+
       (
         airflowLs /
         1000
       )
+
       /
+
       areaM2;
   }
 
@@ -1514,14 +1881,17 @@ export function analyzeTgaObject(
     classification.type
   ) {
 
-
     case "duct_segment":
 
       if (
-        dimensions.shape === "rectangular" &&
-        lengthMm !== undefined &&
-        dimensions.widthMm !== undefined &&
-        dimensions.heightMm !== undefined
+        dimensions.shape ===
+          "rectangular" &&
+        lengthMm !==
+          undefined &&
+        dimensions.widthMm !==
+          undefined &&
+        dimensions.heightMm !==
+          undefined
       ) {
 
         quantityUnit =
@@ -1529,16 +1899,23 @@ export function analyzeTgaObject(
 
 
         quantity =
+
           2
+
           *
+
           (
             dimensions.widthMm /
             1000
+
             +
+
             dimensions.heightMm /
             1000
           )
+
           *
+
           (
             lengthMm /
             1000
@@ -1551,8 +1928,10 @@ export function analyzeTgaObject(
 
 
       else if (
-        dimensions.shape === "round" &&
-        lengthMm !== undefined
+        dimensions.shape ===
+          "round" &&
+        lengthMm !==
+          undefined
       ) {
 
         quantityUnit =
@@ -1574,17 +1953,20 @@ export function analyzeTgaObject(
     case "duct_fitting":
 
       if (
-        dimensions.shape === "round"
+        dimensions.shape ===
+          "round"
       ) {
 
         quantityUnit =
           "St.";
 
+
         quantity =
           1;
 
+
         quantityNote =
-          "Rund-Rohrformteil: Stück; LV-Zuordnung nach Formteilart und Nennweite.";
+          "Rund-Rohrformteil: Stück.";
       }
 
 
@@ -1592,6 +1974,7 @@ export function analyzeTgaObject(
 
         quantityUnit =
           "m²";
+
 
         quantityNote =
           "Rechteck-Kanalformteil: Abrechnung nach äußerer Oberfläche.";
@@ -1604,6 +1987,7 @@ export function analyzeTgaObject(
 
       quantityUnit =
         "m²";
+
 
       quantityNote =
         "Dämmung / Isolierung: Abrechnung in m².";
@@ -1625,8 +2009,10 @@ export function analyzeTgaObject(
       quantityUnit =
         "St.";
 
+
       quantity =
         1;
+
 
       quantityNote =
         "Bauteil: Stück.";
@@ -1656,6 +2042,10 @@ export function analyzeTgaObject(
     description,
 
     objectType,
+
+    manufacturer,
+
+    productType,
 
     tag,
 
@@ -1704,7 +2094,7 @@ export function analyzeTgaObject(
 
 
 /* =========================================================
-   SELECTION ANALYSIS
+   SELECTION
 ========================================================= */
 
 export function analyzeTgaSelection(
@@ -1717,17 +2107,22 @@ export function analyzeTgaSelection(
 
   for (
     const entryValue
-    of selection || []
+    of selection ||
+    []
   ) {
 
     if (
       entryValue &&
-      typeof entryValue === "object"
+      typeof entryValue ===
+        "object"
     ) {
 
       const entry =
         entryValue as
-        Record<string, unknown>;
+          Record<
+            string,
+            unknown
+          >;
 
 
       const properties =
@@ -1739,7 +2134,8 @@ export function analyzeTgaSelection(
 
 
       if (
-        properties.length > 0
+        properties.length >
+        0
       ) {
 
         for (
@@ -1757,9 +2153,15 @@ export function analyzeTgaSelection(
 
             ...(
               objectProperties &&
-              typeof objectProperties === "object"
+              typeof objectProperties ===
+                "object"
+
                 ? objectProperties as
-                    Record<string, unknown>
+                    Record<
+                      string,
+                      unknown
+                    >
+
                 : {}
             )
           };
