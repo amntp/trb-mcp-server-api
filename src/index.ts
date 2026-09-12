@@ -1384,7 +1384,7 @@ function createServer(): McpServer {
       };
     }
 
-    const selection = match.entry.selection ?? [];
+    const selection = match.entry.state.selection ?? [];
 
     if (selection.length === 0) {
       return {
