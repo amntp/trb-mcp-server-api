@@ -1,3 +1,8 @@
+import {
+  enrichProductData,
+  type ProductEnrichment,
+} from "./product-enrichment.js";
+
 export type TgaDomain =
   | "ventilation"
   | "heating"
@@ -107,6 +112,7 @@ export interface TgaAnalysis {
   matchedBy: string[];
   bsddMatches?: BsddClassMatch[];
   etimMatches?: BsddClassMatch[];
+  productEnrichment?: ProductEnrichment;
   vdi3805Scope?: string;
   bimStatus?: "local-only" | "bsdd-enriched" | "bsdd-unavailable";
   rawProperties: Record<string, unknown>;
@@ -119,6 +125,14 @@ type Classification = {
   confidence: "high" | "medium" | "low";
   matchedBy: string[];
   bsddTerms: string[];
+};
+
+type Dimensions = {
+  shape?: "rectangular" | "round";
+  widthMm?: number;
+  heightMm?: number;
+  diameterMm?: number;
+  inferredLengthMm?: number;
 };
 
 function norm(value: unknown): string {
@@ -178,7 +192,7 @@ function flatten(
   }
 
   if (typeof obj.name === "string" && Array.isArray(obj.props)) {
-    const groupName = obj.name.trim();
+    const group = obj.name.trim();
     for (const item of obj.props) {
       if (!item || typeof item !== "object") continue;
       const prop = item as Record<string, unknown>;
@@ -191,7 +205,7 @@ function flatten(
       const key = prop.name.trim();
       if (!key) continue;
       if (!Object.prototype.hasOwnProperty.call(out, key)) out[key] = prop.value;
-      if (groupName) out[`${groupName}.${key}`] = prop.value;
+      if (group) out[`${group}.${key}`] = prop.value;
     }
   }
 
@@ -282,507 +296,128 @@ function makeClass(
   bsddTerms: string[],
   confidence: "high" | "medium" | "low" = "high"
 ): Classification {
-  return {
-    domain,
-    type,
-    label,
-    confidence,
-    matchedBy: [reason],
-    bsddTerms,
-  };
+  return { domain, type, label, confidence, matchedBy: [reason], bsddTerms };
 }
 
 function classify(flat: Record<string, unknown>): Classification {
-  const ifc = norm(
-    txt(flat, ["class", "Common Type", "CommonType", "IfcType", "EntityType"])
-  );
+  const ifc = norm(txt(flat, ["class", "Common Type", "CommonType", "IfcType", "EntityType"]));
   const predefined = norm(txt(flat, ["PredefinedType", "Predefined Type"]));
   const layer = norm(txt(flat, ["Layer", "Presentation Layer", "PresentationLayer"]));
   const product = norm(fieldText(flat));
-  const system = norm(
-    txt(flat, ["Tech-Medium", "System", "SystemName", "DistributionSystem", "Anlage"])
-  );
+  const system = norm(txt(flat, ["Tech-Medium", "System", "SystemName", "DistributionSystem", "Anlage"]));
 
   if (
     hasAny(layer, ["L_BSK", "BSK", "Brandschutz"]) ||
-    hasAny(product, [
-      "Brandschutzklappe",
-      "Brandklappe",
-      "Fire Damper",
-      "FK2-EU",
-      "FK-EU",
-      "FKRS-EU",
-      "FK90",
-      "FR90",
-    ]) ||
+    hasAny(product, ["Brandschutzklappe", "Brandklappe", "Fire Damper", "FK2-EU", "FK-EU", "FKRS-EU", "FK90", "FR90"]) ||
     predefined.includes("firedamper") ||
     predefined.includes("firesmokedamper")
   ) {
-    return makeClass(
-      "ventilation",
-      "fire_damper",
-      "Brandschutzklappe (BSK)",
-      layer.includes("bsk") ? "Layer" : "Produkt-/Property-Daten",
-      ["fire damper", "brandschutzklappe"]
-    );
+    return makeClass("ventilation", "fire_damper", "Brandschutzklappe (BSK)", layer.includes("bsk") ? "Layer" : "Produkt-/Property-Daten", ["fire damper", "brandschutzklappe"]);
   }
 
   if (
     hasAny(layer, ["L_VSR", "VSR", "Volumenstromregler"]) ||
-    hasAny(product, [
-      "Volumenstromregler",
-      "Volumenstrombegrenzer",
-      "Luftmengenregler",
-      "Volume Flow Controller",
-      "VARYCONTROL",
-      "VAV",
-      "CAV",
-      "TVR",
-      "TVJ",
-      "TVZ",
-      "TVE",
-      "VFC",
-    ])
+    hasAny(product, ["Volumenstromregler", "Volumenstrombegrenzer", "Luftmengenregler", "Volume Flow Controller", "VARYCONTROL", "VAV", "CAV", "TVR", "TVJ", "TVZ", "TVE", "VFC"])
   ) {
-    return makeClass(
-      "ventilation",
-      "volume_flow_controller",
-      "Volumenstromregler (VSR)",
-      layer.includes("vsr") ? "Layer" : "Produkt-/Property-Daten",
-      ["volume flow controller", "air volume controller"]
-    );
+    return makeClass("ventilation", "volume_flow_controller", "Volumenstromregler (VSR)", layer.includes("vsr") ? "Layer" : "Produkt-/Property-Daten", ["volume flow controller", "air volume controller"]);
   }
 
-  if (
-    ifc.includes("ductsilencer") ||
-    hasAny(layer, ["schalldaempfer", "silencer"]) ||
-    hasAny(product, [
-      "Schalldämpfer",
-      "Schalldaempfer",
-      "Kulissenschalldämpfer",
-      "Rohrschalldämpfer",
-      "Silencer",
-      "Sound Attenuator",
-    ])
-  ) {
-    return makeClass(
-      "ventilation",
-      "silencer",
-      "Schalldämpfer",
-      "Produkt-/Property-Daten",
-      ["duct silencer", "sound attenuator"]
-    );
+  if (ifc.includes("ductsilencer") || hasAny(layer, ["schalldaempfer", "silencer"]) || hasAny(product, ["Schalldämpfer", "Schalldaempfer", "Kulissenschalldämpfer", "Rohrschalldämpfer", "Silencer", "Sound Attenuator"])) {
+    return makeClass("ventilation", "silencer", "Schalldämpfer", "Produkt-/Property-Daten", ["duct silencer", "sound attenuator"]);
   }
 
-  if (
-    ifc.includes("airterminal") ||
-    hasAny(product, ["Lüftungsgitter", "Luftgitter", "Wetterschutzgitter", "Air Grille", "Grille"])
-  ) {
+  if (ifc.includes("airterminal") || hasAny(product, ["Lüftungsgitter", "Luftgitter", "Wetterschutzgitter", "Air Grille", "Grille", "Luftauslass", "Diffuser", "Tellerventil"])) {
     if (hasAny(product, ["Tellerventil", "Disc Valve"])) {
-      return makeClass(
-        "ventilation",
-        "disc_valve",
-        "Tellerventil",
-        "Produkt-/Property-Daten",
-        ["disc valve"]
-      );
+      return makeClass("ventilation", "disc_valve", "Tellerventil", "Produkt-/Property-Daten", ["disc valve"]);
     }
-
     if (hasAny(product, ["Gitter", "Grille"])) {
-      return makeClass(
-        "ventilation",
-        "grille",
-        "Lüftungsgitter",
-        "Produkt-/Property-Daten",
-        ["air grille"]
-      );
+      return makeClass("ventilation", "grille", "Lüftungsgitter", "Produkt-/Property-Daten", ["air grille"]);
     }
-
-    return makeClass(
-      "ventilation",
-      "air_terminal",
-      "Luftauslass",
-      ifc.includes("airterminal") ? "IFC-Klasse" : "Produkt-/Property-Daten",
-      ["air terminal", "diffuser"]
-    );
+    return makeClass("ventilation", "air_terminal", "Luftauslass", ifc.includes("airterminal") ? "IFC-Klasse" : "Produkt-/Property-Daten", ["air terminal", "diffuser"]);
   }
 
-  if (ifc.includes("fan") || hasAny(product, ["Ventilator", "Fan"])) {
-    return makeClass("ventilation", "fan", "Ventilator", "IFC-/Produktdaten", ["fan"]);
-  }
+  if (ifc.includes("fan") || hasAny(product, ["Ventilator", "Fan"])) return makeClass("ventilation", "fan", "Ventilator", "IFC-/Produktdaten", ["fan"]);
+  if (hasAny(product, ["Luftfilter", "Filterstufe", "HEPA", "Bag Filter"])) return makeClass("ventilation", "filter", "Luftfilter", "Produkt-/Property-Daten", ["air filter"]);
+  if (hasAny(product, ["RLT Gerät", "RLT-Gerät", "Luftbehandlungsgerät", "Air Handling Unit", "AHU"])) return makeClass("ventilation", "air_handling_unit", "RLT-Gerät / Luftbehandlungsgerät", "Produkt-/Property-Daten", ["air handling unit"]);
+  if (hasAny(product, ["Wärmerückgewinnung", "WRG", "Rotationswärmetauscher", "Heat Recovery"])) return makeClass("ventilation", "heat_recovery", "Wärmerückgewinnung", "Produkt-/Property-Daten", ["heat recovery unit"]);
+  if (hasAny(product, ["Heizregister", "Kühlregister", "Cooling Coil", "Heating Coil"])) return makeClass("ventilation", "coil", "Heiz-/Kühlregister", "Produkt-/Property-Daten", ["air heating coil", "air cooling coil"]);
 
-  if (hasAny(product, ["Luftfilter", "Filterstufe", "HEPA", "Bag Filter"])) {
-    return makeClass("ventilation", "filter", "Luftfilter", "Produkt-/Property-Daten", ["air filter"]);
-  }
+  if (ifc.includes("valve") || hasAny(product, ["Kugelhahn", "Regelventil", "Absperrventil", "Rückschlagventil", "Schieber", "Valve", "Ventil"])) return makeClass("generic_mep", "valve", "Armatur / Ventil", "Produkt-/Property-Daten", ["valve"]);
+  if (ifc.includes("pump") || hasAny(product, ["Pumpe", "Pump", "Umwälzpumpe", "Zirkulationspumpe"])) return makeClass("generic_mep", "pump", "Pumpe", "IFC-/Produktdaten", ["pump"]);
+  if (hasAny(product, ["Wärmepumpe", "Heat Pump"]) || predefined.includes("heatpump")) return makeClass("cooling", "heat_pump", "Wärmepumpe", "Produkt-/Property-Daten", ["heat pump"]);
+  if (hasAny(product, ["Kältemaschine", "Chiller", "Kaltwassersatz"]) || predefined.includes("chiller")) return makeClass("cooling", "chiller", "Kältemaschine / Chiller", "Produkt-/Property-Daten", ["chiller"]);
+  if (hasAny(product, ["Heizkessel", "Boiler", "Wärmeerzeuger"]) || predefined.includes("boiler")) return makeClass("heating", "boiler", "Heizkessel / Wärmeerzeuger", "Produkt-/Property-Daten", ["boiler"]);
+  if (ifc.includes("heatexchanger") || hasAny(product, ["Wärmetauscher", "Heat Exchanger"])) return makeClass("generic_mep", "heat_exchanger", "Wärmetauscher", "IFC-/Produktdaten", ["heat exchanger"]);
+  if (hasAny(product, ["Heizkörper", "Radiator", "Konvektor"])) return makeClass("heating", "radiator", "Heizkörper / Wärmeabgabegerät", "Produkt-/Property-Daten", ["radiator"]);
+  if (ifc.includes("tank") || hasAny(product, ["Pufferspeicher", "Ausdehnungsgefäß", "Speicher", "Tank", "Behälter"])) return makeClass("generic_mep", "tank", "Behälter / Speicher", "IFC-/Produktdaten", ["tank", "storage vessel"]);
+  if (hasAny(product, ["Trinkwassererwärmer", "Warmwasserbereiter", "Water Heater", "Durchlauferhitzer"])) return makeClass("plumbing", "water_heater", "Trinkwassererwärmer", "Produkt-/Property-Daten", ["water heater"]);
+  if (ifc.includes("sanitaryterminal")) return makeClass("plumbing", "sanitary_terminal", "Sanitärobjekt", "IFC-Klasse", ["sanitary terminal"]);
+  if (ifc.includes("wasteterminal")) return makeClass("plumbing", "waste_terminal", "Entwässerungsablauf", "IFC-Klasse", ["waste terminal"]);
+  if (ifc.includes("interceptor")) return makeClass("plumbing", "interceptor", "Abscheider", "IFC-Klasse", ["interceptor"]);
 
-  if (hasAny(product, ["RLT Gerät", "RLT-Gerät", "Luftbehandlungsgerät", "Air Handling Unit", "AHU"])) {
-    return makeClass(
-      "ventilation",
-      "air_handling_unit",
-      "RLT-Gerät / Luftbehandlungsgerät",
-      "Produkt-/Property-Daten",
-      ["air handling unit"]
-    );
-  }
+  if (ifc.includes("sensor") || hasAny(product, ["Sensor", "Fühler"])) return makeClass("automation", "sensor", "Sensor / Messfühler", "IFC-/Produktdaten", ["sensor"]);
+  if (ifc.includes("actuator") || hasAny(product, ["Stellantrieb", "Aktor", "Actuator"])) return makeClass("automation", "actuator", "Stellantrieb / Aktor", "IFC-/Produktdaten", ["actuator"]);
+  if (ifc.includes("controller") && !ifc.includes("flowcontroller")) return makeClass("automation", "controller", "Regler / Controller", "IFC-Klasse", ["controller"]);
+  if (ifc.includes("flowmeter") || hasAny(product, ["Wärmemengenzähler", "Wasserzähler", "Flow Meter"])) return makeClass("automation", "meter", "Messgerät / Zähler", "IFC-/Produktdaten", ["flow meter", "meter"]);
 
-  if (hasAny(product, ["Wärmerückgewinnung", "WRG", "Rotationswärmetauscher", "Heat Recovery"])) {
-    return makeClass(
-      "ventilation",
-      "heat_recovery",
-      "Wärmerückgewinnung",
-      "Produkt-/Property-Daten",
-      ["heat recovery unit"]
-    );
-  }
+  if (ifc.includes("electricdistributionboard") || hasAny(product, ["Unterverteilung", "Hauptverteilung", "Schaltschrank"])) return makeClass("electrical", "distribution_board", "Elektroverteilung", "IFC-/Produktdaten", ["distribution board"]);
+  if (ifc.includes("protectivedevice")) return makeClass("electrical", "protective_device", "Schutzgerät", "IFC-Klasse", ["protective device"]);
+  if (ifc.includes("switchingdevice")) return makeClass("electrical", "switching_device", "Schaltgerät", "IFC-Klasse", ["switching device"]);
+  if (ifc.includes("outlet")) return makeClass("electrical", "outlet", "Steckdose / Anschluss", "IFC-Klasse", ["electrical outlet"]);
+  if (ifc.includes("lightfixture")) return makeClass("electrical", "light_fixture", "Leuchte", "IFC-Klasse", ["light fixture", "luminaire"]);
+  if (ifc.includes("transformer")) return makeClass("electrical", "transformer", "Transformator", "IFC-Klasse", ["transformer"]);
+  if (ifc.includes("electricmotor")) return makeClass("electrical", "electric_motor", "Elektromotor", "IFC-Klasse", ["electric motor"]);
+  if (ifc.includes("communicationsappliance")) return makeClass("electrical", "communications_appliance", "Kommunikationsgerät", "IFC-Klasse", ["communications appliance"]);
+  if (ifc.includes("cablecarrier") || hasAny(product, ["Kabeltrasse", "Kabelrinne", "Kabelleiter", "Cable Tray"])) return makeClass("electrical", "cable_carrier", "Kabeltrasse / Kabeltragsystem", "IFC-/Produktdaten", ["cable tray"]);
+  if (ifc.includes("cablesegment")) return makeClass("electrical", "cable_segment", "Kabel / Leitung", "IFC-Klasse", ["cable segment"]);
 
-  if (hasAny(product, ["Heizregister", "Kühlregister", "Cooling Coil", "Heating Coil"])) {
-    return makeClass(
-      "ventilation",
-      "coil",
-      "Heiz-/Kühlregister",
-      "Produkt-/Property-Daten",
-      ["air heating coil", "air cooling coil"]
-    );
-  }
+  if (ifc.includes("ductfitting") || hasAny(product, ["Kanalformteil", "Duct Fitting"])) return makeClass("ventilation", "duct_fitting", "Lüftungsformteil", "IFC-/Produktdaten", ["duct fitting"]);
+  if (ifc.includes("pipefitting") || hasAny(product, ["Rohrformteil", "Pipe Fitting"])) return makeClass("generic_mep", "pipe_fitting", "Rohrformteil", "IFC-/Produktdaten", ["pipe fitting"]);
 
-  if (
-    ifc.includes("valve") ||
-    hasAny(product, [
-      "Kugelhahn",
-      "Regelventil",
-      "Absperrventil",
-      "Rückschlagventil",
-      "Schieber",
-      "Valve",
-      "Ventil",
-    ])
-  ) {
-    return makeClass(
-      "generic_mep",
-      "valve",
-      "Armatur / Ventil",
-      "Produkt-/Property-Daten",
-      ["valve"]
-    );
-  }
+  const airMedium = hasAny(system, ["Zuluft", "Abluft", "Fortluft", "Außenluft", "Aussenluft", "Umluft", "L_Zuluft", "L_Abluft", "L_Fortluft", "L_Außenluft"]);
+  const ductCues = ifc.includes("ductsegment") || hasAny(product, ["Luftleitung", "Lüftungskanal", "Luftkanal", "Rechteckkanal", "Lüftungsrohr", "Wickelfalzrohr", "Spirorohr", "Duct Segment", "Air Duct"]) || airMedium;
+  if (ductCues) return makeClass("ventilation", "duct_segment", "Lüftungskanal / Lüftungsrohr", ifc.includes("ductsegment") ? "IFC-Klasse" : "Produkt-/Systemdaten", ["duct segment", "air duct"]);
 
-  if (ifc.includes("pump") || hasAny(product, ["Pumpe", "Pump", "Umwälzpumpe", "Zirkulationspumpe"])) {
-    return makeClass("generic_mep", "pump", "Pumpe", "IFC-/Produktdaten", ["pump"]);
-  }
-
-  if (hasAny(product, ["Wärmepumpe", "Heat Pump"]) || predefined.includes("heatpump")) {
-    return makeClass("cooling", "heat_pump", "Wärmepumpe", "Produkt-/Property-Daten", ["heat pump"]);
-  }
-
-  if (hasAny(product, ["Kältemaschine", "Chiller", "Kaltwassersatz"]) || predefined.includes("chiller")) {
-    return makeClass("cooling", "chiller", "Kältemaschine / Chiller", "Produkt-/Property-Daten", ["chiller"]);
-  }
-
-  if (hasAny(product, ["Heizkessel", "Boiler", "Wärmeerzeuger"]) || predefined.includes("boiler")) {
-    return makeClass("heating", "boiler", "Heizkessel / Wärmeerzeuger", "Produkt-/Property-Daten", ["boiler"]);
-  }
-
-  if (ifc.includes("heatexchanger") || hasAny(product, ["Wärmetauscher", "Heat Exchanger"])) {
-    return makeClass(
-      "generic_mep",
-      "heat_exchanger",
-      "Wärmetauscher",
-      "IFC-/Produktdaten",
-      ["heat exchanger"]
-    );
-  }
-
-  if (ifc.includes("tank") || hasAny(product, ["Pufferspeicher", "Ausdehnungsgefäß", "Speicher", "Tank", "Behälter"])) {
-    return makeClass(
-      "generic_mep",
-      "tank",
-      "Behälter / Speicher",
-      "IFC-/Produktdaten",
-      ["tank", "storage vessel"]
-    );
-  }
-
-  if (ifc.includes("sensor") || hasAny(product, ["Sensor", "Fühler"])) {
-    return makeClass("automation", "sensor", "Sensor / Messfühler", "IFC-/Produktdaten", ["sensor"]);
-  }
-
-  if (ifc.includes("actuator") || hasAny(product, ["Stellantrieb", "Aktor", "Actuator"])) {
-    return makeClass("automation", "actuator", "Stellantrieb / Aktor", "IFC-/Produktdaten", ["actuator"]);
-  }
-
-  if (ifc.includes("controller") && !ifc.includes("flowcontroller")) {
-    return makeClass("automation", "controller", "Regler / Controller", "IFC-Klasse", ["controller"]);
-  }
-
-  if (ifc.includes("flowmeter") || hasAny(product, ["Wärmemengenzähler", "Wasserzähler", "Flow Meter"])) {
-    return makeClass("automation", "meter", "Messgerät / Zähler", "IFC-/Produktdaten", ["flow meter", "meter"]);
-  }
-
-  if (ifc.includes("electricdistributionboard") || hasAny(product, ["Unterverteilung", "Hauptverteilung", "Schaltschrank"])) {
-    return makeClass("electrical", "distribution_board", "Elektroverteilung", "IFC-/Produktdaten", ["distribution board"]);
-  }
-
-  if (ifc.includes("cablecarrier") || hasAny(product, ["Kabeltrasse", "Kabelrinne", "Kabelleiter", "Cable Tray"])) {
-    return makeClass("electrical", "cable_carrier", "Kabeltrasse / Kabeltragsystem", "IFC-/Produktdaten", ["cable tray"]);
-  }
-
-  if (ifc.includes("cablesegment")) {
-    return makeClass("electrical", "cable_segment", "Kabel / Leitung", "IFC-Klasse", ["cable segment"]);
-  }
-
-  if (ifc.includes("lightfixture")) {
-    return makeClass("electrical", "light_fixture", "Leuchte", "IFC-Klasse", ["light fixture", "luminaire"]);
-  }
-
-  if (ifc.includes("ductfitting") || hasAny(product, ["Kanalformteil", "Duct Fitting"])) {
-    return makeClass("ventilation", "duct_fitting", "Lüftungsformteil", "IFC-/Produktdaten", ["duct fitting"]);
-  }
-
-  if (ifc.includes("pipefitting") || hasAny(product, ["Rohrformteil", "Pipe Fitting"])) {
-    return makeClass("generic_mep", "pipe_fitting", "Rohrformteil", "IFC-/Produktdaten", ["pipe fitting"]);
-  }
-
-  const airMedium = hasAny(system, [
-    "Zuluft",
-    "Abluft",
-    "Fortluft",
-    "Außenluft",
-    "Aussenluft",
-    "Umluft",
-    "L_Zuluft",
-    "L_Abluft",
-    "L_Fortluft",
-    "L_Außenluft",
-  ]);
-
-  const ductCues =
-    ifc.includes("ductsegment") ||
-    hasAny(product, [
-      "Luftleitung",
-      "Lüftungskanal",
-      "Luftkanal",
-      "Rechteckkanal",
-      "Lüftungsrohr",
-      "Wickelfalzrohr",
-      "Spirorohr",
-      "Duct Segment",
-      "Air Duct",
-    ]) ||
-    airMedium;
-
-  if (ductCues) {
-    return makeClass(
-      "ventilation",
-      "duct_segment",
-      "Lüftungskanal / Lüftungsrohr",
-      ifc.includes("ductsegment") ? "IFC-Klasse" : "Produkt-/Systemdaten",
-      ["duct segment", "air duct"]
-    );
-  }
-
-  const pipeCues =
-    ifc.includes("pipesegment") ||
-    hasAny(product, [
-      "Stahlrohr",
-      "Rohrleitung",
-      "Kupferrohr",
-      "Kunststoffrohr",
-      "Mehrschichtverbundrohr",
-      "Pipe Segment",
-      "DIN 2448",
-      "DIN EN 10255",
-    ]);
-
-  if (pipeCues) {
-    return makeClass(
-      "generic_mep",
-      "pipe_segment",
-      "Rohrleitung",
-      ifc.includes("pipesegment") ? "IFC-Klasse" : "Produkt-/Property-Daten",
-      ["pipe segment"]
-    );
-  }
+  const pipeCues = ifc.includes("pipesegment") || hasAny(product, ["Stahlrohr", "Rohrleitung", "Kupferrohr", "Kunststoffrohr", "Mehrschichtverbundrohr", "Pipe Segment", "DIN 2448", "DIN EN 10255"]);
+  if (pipeCues) return makeClass("generic_mep", "pipe_segment", "Rohrleitung", ifc.includes("pipesegment") ? "IFC-Klasse" : "Produkt-/Property-Daten", ["pipe segment"]);
 
   if (ifc.includes("flowsegment")) {
-    if (airMedium) {
-      return makeClass(
-        "ventilation",
-        "duct_segment",
-        "Lüftungskanal / Lüftungsrohr",
-        "IFCFLOWSEGMENT + Luftsystem",
-        ["duct segment", "air duct"],
-        "medium"
-      );
-    }
-
-    if (hasAny(product, ["Rohr", "Pipe", "DIN 2448", "DIN EN 10255"])) {
-      return makeClass(
-        "generic_mep",
-        "pipe_segment",
-        "Rohrleitung",
-        "IFCFLOWSEGMENT + Produktdaten",
-        ["pipe segment"],
-        "medium"
-      );
-    }
+    if (airMedium) return makeClass("ventilation", "duct_segment", "Lüftungskanal / Lüftungsrohr", "IFCFLOWSEGMENT + Luftsystem", ["duct segment", "air duct"], "medium");
+    if (hasAny(product, ["Rohr", "Pipe", "DIN 2448", "DIN EN 10255"])) return makeClass("generic_mep", "pipe_segment", "Rohrleitung", "IFCFLOWSEGMENT + Produktdaten", ["pipe segment"], "medium");
   }
 
-  const explicitInsulationObject =
-    ifc.includes("covering") ||
-    hasAny(layer, ["L_Daemmung", "L_Dämmung", "L_Isolierung"]) ||
-    hasAny(product, [
-      "Dämmmatte",
-      "Dämmplatte",
-      "Rohrdämmung",
-      "Kanaldämmung",
-      "Isolierung",
-      "Insulation",
-      "Armaflex",
-      "Kaiflex",
-      "K-Flex",
-    ]);
+  const explicitInsulationObject = ifc.includes("covering") || hasAny(layer, ["L_Daemmung", "L_Dämmung", "L_Isolierung"]) || hasAny(product, ["Dämmmatte", "Dämmplatte", "Rohrdämmung", "Kanaldämmung", "Isolierung", "Insulation", "Armaflex", "Kaiflex", "K-Flex"]);
+  if (explicitInsulationObject) return makeClass("generic_mep", "insulation", "Dämmung / Isolierung", ifc.includes("covering") ? "IFC-Klasse" : "Produkt-/Layer-Daten", ["insulation"]);
 
-  if (explicitInsulationObject) {
-    return makeClass(
-      "generic_mep",
-      "insulation",
-      "Dämmung / Isolierung",
-      ifc.includes("covering") ? "IFC-Klasse" : "Produkt-/Layer-Daten",
-      ["insulation"]
-    );
-  }
-
-  if (ifc.includes("flowcontroller")) {
-    return makeClass(
-      "generic_mep",
-      "flow_controller_generic",
-      "Strömungs-/Regelbauteil",
-      "IFCFlowController",
-      [],
-      "low"
-    );
-  }
-
-  if (ifc.includes("flowterminal")) {
-    return makeClass(
-      "generic_mep",
-      "flow_terminal_generic",
-      "TGA-Endgerät",
-      "IfcFlowTerminal",
-      [],
-      "low"
-    );
-  }
-
-  if (ifc.includes("flowmovingdevice")) {
-    return makeClass(
-      "generic_mep",
-      "flow_moving_device_generic",
-      "Förder-/Strömungsmaschine",
-      "IfcFlowMovingDevice",
-      [],
-      "low"
-    );
-  }
-
-  if (ifc.includes("flowtreatmentdevice")) {
-    return makeClass(
-      "generic_mep",
-      "flow_treatment_device_generic",
-      "TGA-Behandlungsbauteil",
-      "IfcFlowTreatmentDevice",
-      [],
-      "low"
-    );
-  }
-
-  if (ifc.includes("energyconversiondevice")) {
-    return makeClass(
-      "generic_mep",
-      "energy_conversion_device_generic",
-      "Energieumwandlungsgerät",
-      "IfcEnergyConversionDevice",
-      [],
-      "low"
-    );
-  }
+  if (ifc.includes("flowcontroller")) return makeClass("generic_mep", "flow_controller_generic", "Strömungs-/Regelbauteil", "IFCFlowController", [], "low");
+  if (ifc.includes("flowterminal")) return makeClass("generic_mep", "flow_terminal_generic", "TGA-Endgerät", "IfcFlowTerminal", [], "low");
+  if (ifc.includes("flowmovingdevice")) return makeClass("generic_mep", "flow_moving_device_generic", "Förder-/Strömungsmaschine", "IfcFlowMovingDevice", [], "low");
+  if (ifc.includes("flowtreatmentdevice")) return makeClass("generic_mep", "flow_treatment_device_generic", "TGA-Behandlungsbauteil", "IfcFlowTreatmentDevice", [], "low");
+  if (ifc.includes("energyconversiondevice")) return makeClass("generic_mep", "energy_conversion_device_generic", "Energieumwandlungsgerät", "IfcEnergyConversionDevice", [], "low");
 
   return makeClass("unknown", "unknown", "Nicht eindeutig erkannt", "Keine eindeutige Klassifizierung", [], "low");
 }
 
-type Dimensions = {
-  shape?: "rectangular" | "round";
-  widthMm?: number;
-  heightMm?: number;
-  diameterMm?: number;
-  inferredLengthMm?: number;
-};
-
 function parseDimensionString(value: string | undefined): Partial<Dimensions> {
   if (!value) return {};
-
   const normalized = value.replace(/,/g, ".").replace(/×/g, "x");
 
   const round = normalized.match(/(?:ø|⌀|dn\s*)\s*(\d+(?:\.\d+)?)/i);
-  if (round) {
-    return {
-      shape: "round",
-      diameterMm: Number(round[1]),
-    };
-  }
+  if (round) return { shape: "round", diameterMm: Number(round[1]) };
 
   const triple = normalized.match(/(?:^|[^\d])(\d{2,5}(?:\.\d+)?)\s*x\s*(\d{2,5}(?:\.\d+)?)\s*x\s*(\d{2,5}(?:\.\d+)?)(?:[^\d]|$)/i);
-  if (triple) {
-    return {
-      shape: "rectangular",
-      widthMm: Number(triple[1]),
-      heightMm: Number(triple[2]),
-      inferredLengthMm: Number(triple[3]),
-    };
-  }
+  if (triple) return { shape: "rectangular", widthMm: Number(triple[1]), heightMm: Number(triple[2]), inferredLengthMm: Number(triple[3]) };
 
   const rectangle = normalized.match(/(?:^|[^\d])(\d{2,5}(?:\.\d+)?)\s*x\s*(\d{2,5}(?:\.\d+)?)(?:[^\d]|$)/i);
-  if (rectangle) {
-    return {
-      shape: "rectangular",
-      widthMm: Number(rectangle[1]),
-      heightMm: Number(rectangle[2]),
-    };
-  }
+  if (rectangle) return { shape: "rectangular", widthMm: Number(rectangle[1]), heightMm: Number(rectangle[2]) };
 
   return {};
 }
 
 function dimensions(flat: Record<string, unknown>): Dimensions {
-  let widthMm = num(flat, [
-    "Geom-Side 1 (mm)",
-    "Geom-Side 1",
-    "Width_mm",
-    "Width",
-    "Breite",
-    "Duct Width",
-  ]);
-
-  let heightMm = num(flat, [
-    "Geom-Side 2 (mm)",
-    "Geom-Side 2",
-    "Height_mm",
-    "Height",
-    "Höhe",
-    "Hoehe",
-    "Duct Height",
-  ]);
-
-  let diameterMm = num(flat, [
-    "Geom-Diameter (mm)",
-    "Geom-Diameter",
-    "Diameter_mm",
-    "Diameter",
-    "Durchmesser",
-    "Nominal Diameter",
-    "DN",
-  ]);
-
+  let widthMm = num(flat, ["Geom-Side 1 (mm)", "Geom-Side 1", "Width_mm", "Width", "Breite", "Duct Width"]);
+  let heightMm = num(flat, ["Geom-Side 2 (mm)", "Geom-Side 2", "Height_mm", "Height", "Höhe", "Hoehe", "Duct Height"]);
+  let diameterMm = num(flat, ["Geom-Diameter (mm)", "Geom-Diameter", "Diameter_mm", "Diameter", "Durchmesser", "Nominal Diameter", "DN"]);
   let inferredLengthMm: number | undefined;
 
   const candidates = [
@@ -799,34 +434,12 @@ function dimensions(flat: Record<string, unknown>): Dimensions {
     if (diameterMm === undefined && parsed.diameterMm !== undefined) diameterMm = parsed.diameterMm;
     if (widthMm === undefined && parsed.widthMm !== undefined) widthMm = parsed.widthMm;
     if (heightMm === undefined && parsed.heightMm !== undefined) heightMm = parsed.heightMm;
-    if (inferredLengthMm === undefined && parsed.inferredLengthMm !== undefined) {
-      inferredLengthMm = parsed.inferredLengthMm;
-    }
+    if (inferredLengthMm === undefined && parsed.inferredLengthMm !== undefined) inferredLengthMm = parsed.inferredLengthMm;
   }
 
-  if (widthMm !== undefined && heightMm !== undefined) {
-    return {
-      shape: "rectangular",
-      widthMm,
-      heightMm,
-      inferredLengthMm,
-    };
-  }
-
-  if (diameterMm !== undefined) {
-    return {
-      shape: "round",
-      diameterMm,
-      inferredLengthMm,
-    };
-  }
-
-  return {
-    widthMm,
-    heightMm,
-    diameterMm,
-    inferredLengthMm,
-  };
+  if (widthMm !== undefined && heightMm !== undefined) return { shape: "rectangular", widthMm, heightMm, inferredLengthMm };
+  if (diameterMm !== undefined) return { shape: "round", diameterMm, inferredLengthMm };
+  return { widthMm, heightMm, diameterMm, inferredLengthMm };
 }
 
 function vdiScope(domain: TgaDomain): string | undefined {
@@ -838,8 +451,62 @@ function vdiScope(domain: TgaDomain): string | undefined {
     automation: "VDI 3805 – Gebäudeautomation",
     electrical: "VDI 3805 – Elektrotechnik",
   };
-
   return map[domain];
+}
+
+function calculateDerived(analysis: TgaAnalysis): TgaAnalysis {
+  let areaM2: number | undefined;
+
+  if (analysis.shape === "rectangular" && analysis.widthMm !== undefined && analysis.heightMm !== undefined) {
+    areaM2 = (analysis.widthMm / 1000) * (analysis.heightMm / 1000);
+  } else if (analysis.shape === "round" && analysis.diameterMm !== undefined) {
+    const d = analysis.diameterMm / 1000;
+    areaM2 = Math.PI * d * d / 4;
+  }
+
+  const velocityMs = areaM2 !== undefined && areaM2 > 0 && analysis.airflowLs !== undefined
+    ? analysis.airflowLs / 1000 / areaM2
+    : undefined;
+
+  let quantityUnit = analysis.quantityUnit;
+  let quantity = analysis.quantity;
+  let quantityNote = analysis.quantityNote;
+
+  if (analysis.type === "duct_segment") {
+    if (analysis.shape === "rectangular" && analysis.lengthMm !== undefined && analysis.widthMm !== undefined && analysis.heightMm !== undefined) {
+      quantityUnit = "m²";
+      quantity = 2 * (analysis.widthMm / 1000 + analysis.heightMm / 1000) * (analysis.lengthMm / 1000);
+      quantityNote = "Rechteckkanal: äußere Oberfläche 2 × (B + H) × L.";
+    } else if (analysis.shape === "round" && analysis.lengthMm !== undefined) {
+      quantityUnit = "m";
+      quantity = analysis.lengthMm / 1000;
+      quantityNote = "Rundrohr: Abrechnung nach Länge.";
+    }
+  } else if (analysis.type === "pipe_segment" || analysis.type === "cable_segment") {
+    quantityUnit = "m";
+    quantity = analysis.lengthMm !== undefined ? analysis.lengthMm / 1000 : undefined;
+    quantityNote = "Linienbauteil: Abrechnung nach Länge.";
+  } else if (analysis.type === "duct_fitting") {
+    if (analysis.shape === "round") {
+      quantityUnit = "St.";
+      quantity = 1;
+      quantityNote = "Rund-Rohrformteil: Stück.";
+    } else {
+      quantityUnit = "m²";
+      quantity = undefined;
+      quantityNote = "Rechteck-Kanalformteil: äußere Oberfläche; exakte Menge benötigt Formteilgeometrie.";
+    }
+  } else if (analysis.type === "insulation") {
+    quantityUnit = "m²";
+    quantity = undefined;
+    quantityNote = "Dämmung/Isolierung: Fläche abhängig von Host-Geometrie.";
+  } else if (analysis.type !== "unknown") {
+    quantityUnit = "St.";
+    quantity = 1;
+    quantityNote = "Bauteil: Stück.";
+  }
+
+  return { ...analysis, areaM2, velocityMs, quantityUnit, quantity, quantityNote };
 }
 
 function analyzeLocal(input: unknown): { analysis: TgaAnalysis; bsddTerms: string[] } {
@@ -854,221 +521,71 @@ function analyzeLocal(input: unknown): { analysis: TgaAnalysis; bsddTerms: strin
   const name = txt(flat, ["Product Name", "product.name", "ProductName", "name"]);
   const description = txt(flat, ["Product Description", "product.description", "description"]);
   const objectType = txt(flat, ["Product Object Type", "product.objectType", "ObjectType"]);
-  const manufacturer = txt(flat, [
-    "Fabrikat",
-    "Manufacturer",
-    "Hersteller",
-    "Manufacturer Name",
-    "Product Manufacturer",
-    "ManufacturerName",
-  ]);
+  const manufacturer = txt(flat, ["Fabrikat", "Manufacturer", "Hersteller", "Manufacturer Name", "Product Manufacturer", "ManufacturerName"]);
   const productType = txt(flat, ["Product Type", "Type Name", "Typ", "Type"]);
   const tag = txt(flat, ["Tag", "Kennzeichen", "Bauteilkennzeichen"]);
   const layer = txt(flat, ["Layer", "Presentation Layer", "PresentationLayer"]);
   const modelName = txt(flat, ["modelName", "ModelName", "File Name"]);
-  const system = txt(flat, [
-    "Tech-Medium",
-    "Tech Medium",
-    "System",
-    "SystemName",
-    "System Name",
-    "DistributionSystem",
-    "SystemClassification",
-    "Anlage",
-    "Anlagenkennzeichen",
-    "MagiCADSystem",
-  ]);
-  const storey = txt(flat, [
-    "Storey",
-    "BuildingStorey",
-    "Building Storey",
-    "Geschoss",
-    "Etage",
-    "Floor",
-    "Level",
-    "ReferenceLevel",
-    "Reference Level",
-  ]);
+  const system = txt(flat, ["Tech-Medium", "Tech Medium", "System", "SystemName", "System Name", "DistributionSystem", "SystemClassification", "Anlage", "Anlagenkennzeichen", "MagiCADSystem"]);
+  const storey = txt(flat, ["Storey", "BuildingStorey", "Building Storey", "Geschoss", "Etage", "Floor", "Level", "ReferenceLevel", "Reference Level"]);
 
-  const directLengthMm =
-    num(flat, [
-      "Geom-Length (mm)",
-      "Geom-Length",
-      "Length_mm",
-      "Length mm",
-      "Laenge_mm",
-      "Länge_mm",
-      "DuctLength_mm",
-      "PipeLength_mm",
-    ]) ?? num(flat, ["Length", "Laenge", "Länge"]);
-
+  const directLengthMm = num(flat, ["Geom-Length (mm)", "Geom-Length", "Length_mm", "Length mm", "Laenge_mm", "Länge_mm", "DuctLength_mm", "PipeLength_mm"]) ?? num(flat, ["Length", "Laenge", "Länge"]);
   const lengthMm = directLengthMm ?? dimension.inferredLengthMm;
+  const insulationMm = num(flat, ["Insulation_thickness_mm", "InsulationThickness", "Insulation Thickness", "Insulation_mm", "Daemmstaerke", "Dämmstärke", "Daemmung_mm", "Dämmung_mm"]);
 
-  const insulationMm = num(flat, [
-    "Insulation_thickness_mm",
-    "InsulationThickness",
-    "Insulation Thickness",
-    "Insulation_mm",
-    "Daemmstaerke",
-    "Dämmstärke",
-    "Daemmung_mm",
-    "Dämmung_mm",
-  ]);
-
-  let airflowLs = num(flat, [
-    "qv_SizingFlow_ls",
-    "SizingFlow_ls",
-    "AirFlow_ls",
-    "Flow_l_s",
-    "Volumenstrom_l_s",
-    "Volumenstrom_ls",
-    "Volume Flow l/s",
-    "Calc-Volume flow (l/s)",
-  ]);
-
-  let airflowM3h = num(flat, [
-    "qv_SizingFlow_m3h",
-    "SizingFlow_m3h",
-    "AirFlow_m3h",
-    "Flow_m3h",
-    "Volumenstrom_m3h",
-    "Volume Flow m3/h",
-    "Calc-Volume flow (m3/h)",
-  ]);
-
+  let airflowLs = num(flat, ["qv_SizingFlow_ls", "SizingFlow_ls", "AirFlow_ls", "Flow_l_s", "Volumenstrom_l_s", "Volumenstrom_ls", "Volume Flow l/s", "Calc-Volume flow (l/s)"]);
+  let airflowM3h = num(flat, ["qv_SizingFlow_m3h", "SizingFlow_m3h", "AirFlow_m3h", "Flow_m3h", "Volumenstrom_m3h", "Volume Flow m3/h", "Calc-Volume flow (m3/h)"]);
   if (airflowLs !== undefined && airflowM3h === undefined) airflowM3h = airflowLs * 3.6;
   if (airflowM3h !== undefined && airflowLs === undefined) airflowLs = airflowM3h / 3.6;
 
-  const pressureLossPa = num(flat, [
-    "Calc-Pressure loss (Pa)",
-    "Calc-Pressure Loss (Pa)",
-    "Pressure loss (Pa)",
-    "Pressure Loss",
-    "Druckverlust",
-    "Druckverlust (Pa)",
-  ]);
-
+  const pressureLossPa = num(flat, ["Calc-Pressure loss (Pa)", "Calc-Pressure Loss (Pa)", "Pressure loss (Pa)", "Pressure Loss", "Druckverlust", "Druckverlust (Pa)"]);
   const zeta = num(flat, ["Calc-Zeta", "Zeta", "ζ"]);
 
-  let areaM2: number | undefined;
-  if (
-    dimension.shape === "rectangular" &&
-    dimension.widthMm !== undefined &&
-    dimension.heightMm !== undefined
-  ) {
-    areaM2 = (dimension.widthMm / 1000) * (dimension.heightMm / 1000);
-  } else if (dimension.shape === "round" && dimension.diameterMm !== undefined) {
-    const diameterM = dimension.diameterMm / 1000;
-    areaM2 = (Math.PI * diameterM * diameterM) / 4;
-  }
-
-  const velocityMs =
-    areaM2 !== undefined && areaM2 > 0 && airflowLs !== undefined
-      ? airflowLs / 1000 / areaM2
-      : undefined;
-
-  let quantityUnit: "m" | "m²" | "St." | undefined;
-  let quantity: number | undefined;
-  let quantityNote: string | undefined;
-
-  if (classification.type === "duct_segment") {
-    if (
-      dimension.shape === "rectangular" &&
-      lengthMm !== undefined &&
-      dimension.widthMm !== undefined &&
-      dimension.heightMm !== undefined
-    ) {
-      quantityUnit = "m²";
-      quantity =
-        2 *
-        (dimension.widthMm / 1000 + dimension.heightMm / 1000) *
-        (lengthMm / 1000);
-      quantityNote = "Rechteckkanal: äußere Oberfläche 2 × (B + H) × L.";
-    } else if (dimension.shape === "round" && lengthMm !== undefined) {
-      quantityUnit = "m";
-      quantity = lengthMm / 1000;
-      quantityNote = "Rundrohr: Abrechnung nach Länge.";
-    }
-  } else if (classification.type === "pipe_segment" || classification.type === "cable_segment") {
-    quantityUnit = "m";
-    if (lengthMm !== undefined) quantity = lengthMm / 1000;
-    quantityNote = "Linienbauteil: Abrechnung nach Länge.";
-  } else if (classification.type === "duct_fitting") {
-    if (dimension.shape === "round") {
-      quantityUnit = "St.";
-      quantity = 1;
-      quantityNote = "Rund-Rohrformteil: Stück.";
-    } else {
-      quantityUnit = "m²";
-      quantityNote = "Rechteck-Kanalformteil: äußere Oberfläche; exakte Menge benötigt Formteilgeometrie.";
-    }
-  } else if (classification.type === "insulation") {
-    quantityUnit = "m²";
-    quantityNote = "Dämmung/Isolierung: Fläche abhängig von Host-Geometrie.";
-  } else if (classification.type !== "unknown") {
-    quantityUnit = "St.";
-    quantity = 1;
-    quantityNote = "Bauteil: Stück.";
-  }
+  const base: TgaAnalysis = {
+    domain: classification.domain,
+    type: classification.type,
+    label: classification.label,
+    ifcType,
+    predefinedType,
+    guid,
+    runtimeId,
+    name,
+    description,
+    objectType,
+    manufacturer,
+    productType,
+    tag,
+    layer,
+    modelName,
+    system,
+    storey,
+    shape: dimension.shape,
+    widthMm: dimension.widthMm,
+    heightMm: dimension.heightMm,
+    diameterMm: dimension.diameterMm,
+    lengthMm,
+    insulationMm,
+    airflowLs,
+    airflowM3h,
+    pressureLossPa,
+    zeta,
+    confidence: classification.confidence,
+    matchedBy: classification.matchedBy,
+    vdi3805Scope: vdiScope(classification.domain),
+    bimStatus: "local-only",
+    rawProperties: flat,
+  };
 
   const fallbackTerms = [productType, name, description]
     .filter((value): value is string => Boolean(value && value.trim()))
     .slice(0, 2);
-
   const bsddTerms = Array.from(new Set([...classification.bsddTerms, ...fallbackTerms])).slice(0, 2);
 
-  return {
-    bsddTerms,
-    analysis: {
-      domain: classification.domain,
-      type: classification.type,
-      label: classification.label,
-      ifcType,
-      predefinedType,
-      guid,
-      runtimeId,
-      name,
-      description,
-      objectType,
-      manufacturer,
-      productType,
-      tag,
-      layer,
-      modelName,
-      system,
-      storey,
-      shape: dimension.shape,
-      widthMm: dimension.widthMm,
-      heightMm: dimension.heightMm,
-      diameterMm: dimension.diameterMm,
-      lengthMm,
-      insulationMm,
-      airflowLs,
-      airflowM3h,
-      areaM2,
-      velocityMs,
-      pressureLossPa,
-      zeta,
-      quantityUnit,
-      quantity,
-      quantityNote,
-      confidence: classification.confidence,
-      matchedBy: classification.matchedBy,
-      vdi3805Scope: vdiScope(classification.domain),
-      bimStatus: "local-only",
-      rawProperties: flat,
-    },
-  };
+  return { analysis: calculateDerived(base), bsddTerms };
 }
 
 const BSDD_API = "https://api.bsdd.buildingsmart.org";
-const bsddCache = new Map<
-  string,
-  {
-    expires: number;
-    value: BsddClassMatch[];
-  }
->();
+const bsddCache = new Map<string, { expires: number; value: BsddClassMatch[] }>();
 
 function bsddScore(item: BsddClassMatch, analysis: TgaAnalysis, query: string): number {
   let score = 0;
@@ -1084,13 +601,7 @@ function bsddScore(item: BsddClassMatch, analysis: TgaAnalysis, query: string): 
   if (dictionary.includes("ifc") || dictionary.includes("buildingsmart")) score += 10;
 
   const localIfc = norm(analysis.ifcType);
-  if (
-    localIfc &&
-    item.relatedIfcEntityNames?.some((ifc: string) => norm(ifc) === localIfc)
-  ) {
-    score += 35;
-  }
-
+  if (localIfc && item.relatedIfcEntityNames?.some((ifc: string) => norm(ifc) === localIfc)) score += 35;
   return score;
 }
 
@@ -1108,28 +619,21 @@ async function searchBsdd(query: string, analysis: TgaAnalysis): Promise<BsddCla
 
   try {
     const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "X-User-Agent": "AgentEyes/2.1",
-      },
+      headers: { Accept: "application/json", "X-User-Agent": "AgentEyes/2.2" },
       signal: controller.signal,
     });
-
     if (!response.ok) throw new Error(`bSDD HTTP ${response.status}`);
 
     const payload: unknown = await response.json();
-    const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
     const rawClasses: unknown[] = Array.isArray(record.classes) ? record.classes : [];
     const items: BsddClassMatch[] = [];
 
     for (const raw of rawClasses) {
       if (!raw || typeof raw !== "object") continue;
       const value = raw as Record<string, unknown>;
-
       const relatedIfcEntityNames = Array.isArray(value.relatedIfcEntityNames)
-        ? value.relatedIfcEntityNames.filter(
-            (ifc: unknown): ifc is string => typeof ifc === "string"
-          )
+        ? value.relatedIfcEntityNames.filter((ifc: unknown): ifc is string => typeof ifc === "string")
         : undefined;
 
       const item: BsddClassMatch = {
@@ -1142,65 +646,97 @@ async function searchBsdd(query: string, analysis: TgaAnalysis): Promise<BsddCla
         relatedIfcEntityNames,
         score: 0,
       };
-
       item.score = bsddScore(item, analysis, query);
       items.push(item);
     }
 
     items.sort((a: BsddClassMatch, b: BsddClassMatch) => b.score - a.score);
     const result = items.slice(0, 8);
-
-    bsddCache.set(cacheKey, {
-      expires: Date.now() + 6 * 60 * 60 * 1000,
-      value: result,
-    });
-
+    bsddCache.set(cacheKey, { expires: Date.now() + 6 * 60 * 60 * 1000, value: result });
     return result;
   } finally {
     clearTimeout(timer);
   }
 }
 
+function isGenericProductType(value: string | undefined): boolean {
+  if (!value) return true;
+  const n = norm(value);
+  return ["einbauteil", "bauteil", "component", "element"].includes(n);
+}
+
 async function enrich(local: { analysis: TgaAnalysis; bsddTerms: string[] }): Promise<TgaAnalysis> {
-  if (!local.bsddTerms.length) return local.analysis;
+  const analysis = local.analysis;
 
-  try {
-    const searches = await Promise.allSettled(
-      local.bsddTerms.map((term) => searchBsdd(term, local.analysis))
-    );
+  const [productResult, bsddResults] = await Promise.all([
+    enrichProductData({
+      manufacturer: analysis.manufacturer,
+      productType: analysis.productType,
+      name: analysis.name,
+      description: analysis.description,
+      objectType: analysis.objectType,
+      ifcType: analysis.ifcType,
+      diameterMm: analysis.diameterMm,
+      widthMm: analysis.widthMm,
+      heightMm: analysis.heightMm,
+      lengthMm: analysis.lengthMm,
+    }).catch(() => undefined),
+    local.bsddTerms.length
+      ? Promise.allSettled(local.bsddTerms.map((term) => searchBsdd(term, analysis)))
+      : Promise.resolve([] as PromiseSettledResult<BsddClassMatch[]>[]),
+  ]);
 
-    const combined = searches.flatMap((result) =>
-      result.status === "fulfilled" ? result.value : []
-    );
+  let enriched: TgaAnalysis = { ...analysis };
 
-    const unique = Array.from(
-      new Map(
-        combined
-          .filter((item) => item.uri)
-          .map((item) => [item.uri as string, item])
-      ).values()
-    )
-      .sort((a: BsddClassMatch, b: BsddClassMatch) => b.score - a.score)
-      .slice(0, 6);
+  if (productResult) {
+    const hasManufacturerSource = productResult.sources.some((source) => source.source === "manufacturer");
+    const widthMm = enriched.widthMm ?? productResult.widthMm;
+    const heightMm = enriched.heightMm ?? productResult.heightMm;
+    const diameterMm = enriched.diameterMm ?? productResult.diameterMm;
+    const lengthMm = enriched.lengthMm ?? productResult.lengthMm;
+    const shape = enriched.shape ?? (diameterMm !== undefined ? "round" : widthMm !== undefined && heightMm !== undefined ? "rectangular" : undefined);
 
-    const etim = unique
-      .filter((item) =>
-        norm(`${item.dictionaryName ?? ""} ${item.dictionaryUri ?? ""}`).includes("etim")
-      )
-      .slice(0, 3);
-
-    return {
-      ...local.analysis,
-      bsddMatches: unique,
-      etimMatches: etim,
-      bimStatus: unique.length ? "bsdd-enriched" : "local-only",
+    enriched = {
+      ...enriched,
+      manufacturer: enriched.manufacturer ?? productResult.manufacturer,
+      productType: isGenericProductType(enriched.productType) && productResult.productSeries
+        ? productResult.productSeries
+        : enriched.productType,
+      widthMm,
+      heightMm,
+      diameterMm,
+      lengthMm,
+      shape,
+      productEnrichment: productResult,
+      matchedBy: hasManufacturerSource && !enriched.matchedBy.includes("Herstellerkatalog")
+        ? [...enriched.matchedBy, "Herstellerkatalog"]
+        : enriched.matchedBy,
     };
-  } catch {
-    return {
-      ...local.analysis,
-      bimStatus: "bsdd-unavailable",
-    };
+
+    enriched = calculateDerived(enriched);
   }
+
+  const combined = bsddResults.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  const unique = Array.from(
+    new Map(
+      combined
+        .filter((item) => item.uri)
+        .map((item) => [item.uri as string, item])
+    ).values()
+  )
+    .sort((a: BsddClassMatch, b: BsddClassMatch) => b.score - a.score)
+    .slice(0, 6);
+
+  const etim = unique
+    .filter((item) => norm(`${item.dictionaryName ?? ""} ${item.dictionaryUri ?? ""}`).includes("etim"))
+    .slice(0, 3);
+
+  return {
+    ...enriched,
+    bsddMatches: unique,
+    etimMatches: etim,
+    bimStatus: unique.length ? "bsdd-enriched" : "local-only",
+  };
 }
 
 export async function analyzeTgaSelection(selection: unknown[]): Promise<TgaAnalysis[]> {
@@ -1217,10 +753,9 @@ export async function analyzeTgaSelection(selection: unknown[]): Promise<TgaAnal
             modelId: entry.modelId,
             modelName: entry.modelName,
             ...(objectProperties && typeof objectProperties === "object"
-              ? (objectProperties as Record<string, unknown>)
+              ? objectProperties as Record<string, unknown>
               : {}),
           };
-
           locals.push(analyzeLocal(merged));
         }
         continue;
@@ -1232,6 +767,5 @@ export async function analyzeTgaSelection(selection: unknown[]): Promise<TgaAnal
 
   const head = locals.slice(0, 6);
   const tail = locals.slice(6).map((item) => item.analysis);
-
-  return [...(await Promise.all(head.map(enrich))), ...tail];
+  return [...await Promise.all(head.map(enrich)), ...tail];
 }
