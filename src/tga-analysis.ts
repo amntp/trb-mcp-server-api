@@ -3,6 +3,7 @@ export type TgaComponentType =
   | "duct_fitting"
   | "fire_damper"
   | "volume_flow_controller"
+  | "flow_controller_generic"
   | "grille"
   | "disc_valve"
   | "air_terminal"
@@ -24,7 +25,10 @@ export interface TgaAnalysis {
   runtimeId?: number;
 
   name?: string;
+  description?: string;
+  objectType?: string;
   tag?: string;
+  layer?: string;
 
   modelName?: string;
   system?: string;
@@ -59,7 +63,7 @@ export interface TgaAnalysis {
 
 
 /* =========================================================
-   PROPERTY NORMALISATION
+   NORMALISIERUNG
 ========================================================= */
 
 function normalizeText(value: unknown): string {
@@ -70,6 +74,8 @@ function normalizeText(value: unknown): string {
     .replace(/ö/g, "oe")
     .replace(/ü/g, "ue")
     .replace(/ß/g, "ss")
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
     .replace(/\s+/g, " ");
 }
 
@@ -85,21 +91,10 @@ function isPrimitive(value: unknown): boolean {
 }
 
 
-/**
- * Wandelt die Trimble-Property-Struktur in ein flaches,
- * durchsuchbares Dictionary um.
- *
- * Beispiel Trimble:
- *
- * {
- *   name: "Geom-Side 1 (mm)",
- *   value: "250"
- * }
- *
- * wird zu:
- *
- * "Geom-Side 1 (mm)" = "250"
- */
+/* =========================================================
+   TRIMBLE PROPERTIES FLACH ZIEHEN
+========================================================= */
+
 function flattenProperties(
   value: unknown,
   prefix = "",
@@ -111,6 +106,7 @@ function flattenProperties(
   }
 
   if (Array.isArray(value)) {
+
     value.forEach((item, index) => {
       flattenProperties(
         item,
@@ -123,6 +119,7 @@ function flattenProperties(
   }
 
   if (typeof value !== "object") {
+
     if (prefix) {
       out[prefix] = value;
     }
@@ -134,8 +131,8 @@ function flattenProperties(
 
 
   /*
-   * Trimble Property:
-   * { name: "...", value: "..." }
+   * Trimble:
+   * { name: "Geom-Side 1 (mm)", value: "250" }
    */
   if (
     typeof obj.name === "string" &&
@@ -146,6 +143,7 @@ function flattenProperties(
     const propertyName = String(obj.name).trim();
 
     if (propertyName) {
+
       if (
         !Object.prototype.hasOwnProperty.call(
           out,
@@ -166,11 +164,7 @@ function flattenProperties(
 
   /*
    * Trimble Property Group:
-   *
-   * {
-   *   name: "Pset MEP",
-   *   props: [...]
-   * }
+   * Pset MEP usw.
    */
   if (
     typeof obj.name === "string" &&
@@ -272,21 +266,22 @@ function findValue(
 
 
   /*
-   * Exakter Feldname zuerst.
+   * Exakter Name zuerst.
    */
   for (const alias of aliases) {
 
     const wanted = normalizeText(alias);
 
-    const found = entries.find(([key]) => {
+    const found =
+      entries.find(([key]) => {
 
-      const last =
-        normalizeText(
-          key.split(".").pop()
-        );
+        const last =
+          normalizeText(
+            key.split(".").pop()
+          );
 
-      return last === wanted;
-    });
+        return last === wanted;
+      });
 
     if (found) {
       return found[1];
@@ -295,7 +290,7 @@ function findValue(
 
 
   /*
-   * Danach Teiltreffer im vollständigen Pfad.
+   * Dann Pfad / Teiltreffer.
    */
   for (const alias of aliases) {
 
@@ -303,8 +298,7 @@ function findValue(
 
     const found =
       entries.find(([key]) =>
-        normalizeText(key)
-          .includes(wanted)
+        normalizeText(key).includes(wanted)
       );
 
     if (found) {
@@ -355,8 +349,7 @@ function numberValue(
     return undefined;
   }
 
-  let text =
-    String(value).trim();
+  let text = String(value).trim();
 
   if (!text) {
     return undefined;
@@ -417,7 +410,7 @@ function containsAny(
 
 
 /* =========================================================
-   DIMENSIONS
+   ABMESSUNGEN
 ========================================================= */
 
 function dimensionText(
@@ -457,8 +450,7 @@ function parseDimensions(
 
   /*
    * Trimble Nova:
-   * Geom-Side 1 (mm)
-   * Geom-Side 2 (mm)
+   * Geom-Side 1 / Geom-Side 2
    */
   let widthMm =
     numberByAliases(
@@ -533,7 +525,6 @@ function parseDimensions(
       roundMatch &&
       diameterMm === undefined
     ) {
-
       diameterMm =
         Number(roundMatch[1]);
     }
@@ -547,32 +538,26 @@ function parseDimensions(
 
     if (rectangularMatch) {
 
-      if (
-        widthMm === undefined
-      ) {
+      if (widthMm === undefined) {
         widthMm =
-          Number(
-            rectangularMatch[1]
-          );
+          Number(rectangularMatch[1]);
       }
 
-      if (
-        heightMm === undefined
-      ) {
+      if (heightMm === undefined) {
         heightMm =
-          Number(
-            rectangularMatch[2]
-          );
+          Number(rectangularMatch[2]);
       }
     }
 
 
+    /*
+     * Einzelwert = meistens Rundrohr.
+     */
     if (
       !roundMatch &&
       !rectangularMatch &&
       diameterMm === undefined &&
-      /^\s*\d+(?:\.\d+)?\s*$/
-        .test(text)
+      /^\s*\d+(?:\.\d+)?\s*$/.test(text)
     ) {
 
       const n = Number(text);
@@ -620,7 +605,7 @@ function parseDimensions(
 
 
 /* =========================================================
-   TGA CLASSIFICATION
+   TGA BAUTEILKLASSIFIZIERUNG
 ========================================================= */
 
 function classify(
@@ -665,6 +650,40 @@ function classify(
     );
 
 
+  const nameText =
+    normalizeText(
+      [
+        textValue(flat, [
+          "Product Name",
+          "ProductName",
+          "Name",
+          "name"
+        ]),
+        textValue(flat, [
+          "Product Description",
+          "Description",
+          "description"
+        ]),
+        textValue(flat, [
+          "Product Object Type",
+          "ObjectType",
+          "objectType"
+        ]),
+        textValue(flat, [
+          "Layer",
+          "Presentation Layer",
+          "PresentationLayer"
+        ])
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+
+
+  const allText =
+    `${text} ${nameText}`;
+
+
   const hit = (
     type: TgaComponentType,
     label: string,
@@ -681,18 +700,26 @@ function classify(
   });
 
 
-  /* Brandschutzklappe */
+  /* =====================================================
+     BSK / BRANDSCHUTZKLAPPE
+  ===================================================== */
 
   if (
     containsAny(
-      text,
+      allText,
       [
         "brandschutzklappe",
+        "brandschutz klappe",
         "brandklappe",
         "fire damper",
+        "fire smoke damper",
         "firedamper",
         "firesmokedamper",
-        "bsk"
+        "bsk",
+        "fk90",
+        "fr90",
+        "f90 klappe",
+        "e90 klappe"
       ]
     ) ||
     predefined.includes("firedamper") ||
@@ -702,23 +729,33 @@ function classify(
     return hit(
       "fire_damper",
       "Brandschutzklappe (BSK)",
-      "BSK / FireDamper erkannt"
+      "Brandschutzklappe / FireDamper erkannt"
     );
   }
 
 
-  /* Volumenstromregler */
+  /* =====================================================
+     VSR / VOLUMENSTROMREGLER
+  ===================================================== */
 
   if (
     containsAny(
-      text,
+      allText,
       [
         "volumenstromregler",
+        "volumenstrom regler",
         "volumenstrombegrenzer",
+        "volumenstrom begrenzer",
+        "luftmengenregler",
+        "luftmengen regler",
+        "volume flow controller",
+        "air volume controller",
         "constant air volume",
         "variable air volume",
-        "controldamper",
-        "balancingdamper",
+        "control damper",
+        "balancing damper",
+        "regulierklappe",
+        "regelklappe",
         "vsr",
         "vav",
         "cav"
@@ -734,18 +771,22 @@ function classify(
   }
 
 
-  /* Schalldämpfer */
+  /* =====================================================
+     SCHALLDÄMPFER
+  ===================================================== */
 
   if (
-    ifcType.includes(
-      "ductsilencer"
-    ) ||
+    ifcType.includes("ductsilencer") ||
     containsAny(
-      text,
+      allText,
       [
         "schalldaempfer",
         "schalldämpfer",
-        "ductsilencer",
+        "kulissenschalldaempfer",
+        "kulissenschalldämpfer",
+        "rohrschalldaempfer",
+        "rohrschalldämpfer",
+        "duct silencer",
         "silencer",
         "sound attenuator",
         "attenuator"
@@ -761,13 +802,16 @@ function classify(
   }
 
 
-  /* Tellerventil */
+  /* =====================================================
+     TELLERVENTIL
+  ===================================================== */
 
   if (
     containsAny(
-      text,
+      allText,
       [
         "tellerventil",
+        "tellerventile",
         "disc valve",
         "discvalve"
       ]
@@ -782,15 +826,20 @@ function classify(
   }
 
 
-  /* Gitter */
+  /* =====================================================
+     GITTER
+  ===================================================== */
 
   if (
     containsAny(
-      text,
+      allText,
       [
         "lueftungsgitter",
         "lüftungsgitter",
         "luftgitter",
+        "schutzgitter",
+        "wetterschutzgitter",
+        "wsg",
         "air grille",
         "grille"
       ]
@@ -805,15 +854,19 @@ function classify(
   }
 
 
-  /* Jalousieklappe */
+  /* =====================================================
+     JALOUSIEKLAPPE
+  ===================================================== */
 
   if (
     containsAny(
-      text,
+      allText,
       [
         "jalousieklappe",
+        "jalousie klappe",
         "louvre damper",
         "louver damper",
+        "louver",
         "jalousie"
       ]
     )
@@ -827,16 +880,20 @@ function classify(
   }
 
 
-  /* Absperrklappe */
+  /* =====================================================
+     ABSPERRKLAPPE
+  ===================================================== */
 
   if (
     containsAny(
-      text,
+      allText,
       [
         "absperrklappe",
+        "absperr klappe",
         "shutoff damper",
+        "shut off damper",
         "shut-off damper",
-        "shut off damper"
+        "drosselklappe"
       ]
     )
   ) {
@@ -849,20 +906,27 @@ function classify(
   }
 
 
-  /* Isolierung */
+  /* =====================================================
+     ISOLIERUNG
+  ===================================================== */
 
   if (
-    ifcType.includes(
-      "covering"
-    ) ||
+    ifcType.includes("covering") ||
     containsAny(
-      text,
+      allText,
       [
         "isolierung",
         "daemmung",
         "dämmung",
+        "waermedaemmung",
+        "wärmedämmung",
+        "kaeltedaemmung",
+        "kältedämmung",
         "insulation",
-        "duct insulation"
+        "duct insulation",
+        "armaflex",
+        "kaiflex",
+        "k flex"
       ]
     )
   ) {
@@ -878,46 +942,26 @@ function classify(
   }
 
 
-  /* sonstige Klappe */
+  /* =====================================================
+     LUFTAUSLASS
+  ===================================================== */
 
   if (
-    ifcType.includes(
-      "damper"
-    ) ||
+    ifcType.includes("airterminal") ||
     containsAny(
-      text,
-      [
-        "damper",
-        "klappe"
-      ]
-    )
-  ) {
-
-    return hit(
-      "damper_generic",
-      "Lüftungsklappe",
-      "Klappe erkannt",
-      "medium"
-    );
-  }
-
-
-  /* Luftauslass */
-
-  if (
-    ifcType.includes(
-      "airterminal"
-    ) ||
-    containsAny(
-      text,
+      allText,
       [
         "luftauslass",
+        "luft auslass",
         "auslass",
+        "drallauslass",
+        "schlitzauslass",
+        "deckenauslass",
+        "bodenauslass",
+        "quellauslass",
         "air terminal",
         "airterminal",
-        "diffuser",
-        "drallauslass",
-        "schlitzauslass"
+        "diffuser"
       ]
     )
   ) {
@@ -933,29 +977,37 @@ function classify(
   }
 
 
-  /* Kanalformteil */
+  /* =====================================================
+     KANALFORMTEIL
+  ===================================================== */
 
   if (
-    ifcType.includes(
-      "ductfitting"
-    ) ||
+    ifcType.includes("ductfitting") ||
     containsAny(
-      text,
+      allText,
       [
         "duct fitting",
         "kanalformteil",
         "formteil",
         "bogen",
+        "rohrbogen",
+        "kanalbogen",
         "abzweig",
-        "t-stueck",
-        "t-stück",
+        "t stueck",
+        "t stück",
+        "t piece",
         "uebergang",
         "übergang",
+        "reduktion",
         "reduction",
         "transition",
         "bend",
         "junction",
-        "elbow"
+        "elbow",
+        "hosenstueck",
+        "hosenstück",
+        "bundkragen",
+        "stutzen"
       ]
     )
   ) {
@@ -963,7 +1015,7 @@ function classify(
     return hit(
       "duct_fitting",
       "Lüftungsformteil",
-      "Kanalformteil erkannt",
+      "Kanal-/Rohrformteil erkannt",
       ifcType.includes("ductfitting")
         ? "high"
         : "medium"
@@ -971,23 +1023,27 @@ function classify(
   }
 
 
-  /* Kanal / Rohr */
+  /* =====================================================
+     KANAL / ROHR
+  ===================================================== */
 
   if (
-    ifcType.includes(
-      "ductsegment"
-    ) ||
+    ifcType.includes("ductsegment") ||
     containsAny(
-      text,
+      allText,
       [
         "duct segment",
         "luftkanal",
         "lueftungskanal",
         "lüftungskanal",
+        "rechteckkanal",
+        "rechteck kanal",
         "lueftungsrohr",
         "lüftungsrohr",
         "wickelfalz",
-        "spiral duct"
+        "wickelfalzrohr",
+        "spiral duct",
+        "spirorohr"
       ]
     )
   ) {
@@ -995,10 +1051,57 @@ function classify(
     return hit(
       "duct_segment",
       "Lüftungskanal / Lüftungsrohr",
-      "Kanal / Rohr erkannt",
+      "Lüftungskanal / Rohr erkannt",
       ifcType.includes("ductsegment")
         ? "high"
         : "medium"
+    );
+  }
+
+
+  /* =====================================================
+     SONSTIGE KLAPPE
+  ===================================================== */
+
+  if (
+    containsAny(
+      allText,
+      [
+        "klappe",
+        "damper"
+      ]
+    )
+  ) {
+
+    return hit(
+      "damper_generic",
+      "Lüftungsklappe",
+      "Allgemeine Lüftungsklappe erkannt",
+      "medium"
+    );
+  }
+
+
+  /* =====================================================
+     IFCFLOWCONTROLLER FALLBACK
+
+     Nova exportiert BSK/VSR/andere Regler häufig nur
+     als IFCFLOWCONTROLLER.
+
+     Wenn kein Name zur eindeutigen Zuordnung vorhanden ist,
+     zeigen wir wenigstens korrekt:
+     "Luftstrom-Regelbauteil"
+  ===================================================== */
+
+  if (
+    ifcType.includes("flowcontroller")
+  ) {
+
+    return hit(
+      "flow_controller_generic",
+      "Luftstrom-Regelbauteil",
+      "IFCFLOWCONTROLLER erkannt; Untertyp nicht eindeutig",
+      "low"
     );
   }
 
@@ -1098,6 +1201,28 @@ export function analyzeTgaObject(
     );
 
 
+  const description =
+    textValue(
+      flat,
+      [
+        "Product Description",
+        "Description",
+        "description"
+      ]
+    );
+
+
+  const objectType =
+    textValue(
+      flat,
+      [
+        "Product Object Type",
+        "ObjectType",
+        "objectType"
+      ]
+    );
+
+
   const tag =
     textValue(
       flat,
@@ -1106,6 +1231,17 @@ export function analyzeTgaObject(
         "tag",
         "Kennzeichen",
         "Bauteilkennzeichen"
+      ]
+    );
+
+
+  const layer =
+    textValue(
+      flat,
+      [
+        "Layer",
+        "Presentation Layer",
+        "PresentationLayer"
       ]
     );
 
@@ -1121,11 +1257,6 @@ export function analyzeTgaObject(
     );
 
 
-  /*
-   * Trimble Nova nutzt beim gezeigten Modell:
-   *
-   * Tech-Medium = L_Zuluft
-   */
   const system =
     textValue(
       flat,
@@ -1166,10 +1297,6 @@ export function analyzeTgaObject(
     );
 
 
-  /*
-   * Trimble Nova:
-   * Geom-Length (mm)
-   */
   const lengthMm =
     numberByAliases(
       flat,
@@ -1225,7 +1352,9 @@ export function analyzeTgaObject(
         "Volumenstrom_ls",
         "DesignFlow_ls",
         "VolumeFlow_ls",
-        "Volume Flow l/s"
+        "Volume Flow l/s",
+        "Calc-Volume flow (l/s)",
+        "Calc-Air flow (l/s)"
       ]
     );
 
@@ -1243,7 +1372,9 @@ export function analyzeTgaObject(
         "Volumenstrom_m3_h",
         "DesignFlow_m3h",
         "VolumeFlow_m3h",
-        "Volume Flow m3/h"
+        "Volume Flow m3/h",
+        "Calc-Volume flow (m3/h)",
+        "Calc-Air flow (m3/h)"
       ]
     );
 
@@ -1268,12 +1399,6 @@ export function analyzeTgaObject(
   }
 
 
-  /*
-   * Trimble Nova:
-   *
-   * Calc-Pressure loss (Pa)
-   * Calc-Zeta
-   */
   const pressureLossPa =
     numberByAliases(
       flat,
@@ -1455,13 +1580,11 @@ export function analyzeTgaObject(
         quantityUnit =
           "St.";
 
-
         quantity =
           1;
 
-
         quantityNote =
-          "Rund-Rohrformteil: Stück; genaue LV-Zuordnung nach Formteilart und Nennweite.";
+          "Rund-Rohrformteil: Stück; LV-Zuordnung nach Formteilart und Nennweite.";
       }
 
 
@@ -1470,9 +1593,8 @@ export function analyzeTgaObject(
         quantityUnit =
           "m²";
 
-
         quantityNote =
-          "Rechteck-Kanalformteil: Abrechnung nach äußerer Oberfläche; exakte Menge benötigt Formteilgeometrie.";
+          "Rechteck-Kanalformteil: Abrechnung nach äußerer Oberfläche.";
       }
 
       break;
@@ -1483,15 +1605,15 @@ export function analyzeTgaObject(
       quantityUnit =
         "m²";
 
-
       quantityNote =
-        "Dämmung/Isolierung: m²; genaue Fläche abhängig von Abmessung und Länge des gedämmten Bauteils.";
+        "Dämmung / Isolierung: Abrechnung in m².";
 
       break;
 
 
     case "fire_damper":
     case "volume_flow_controller":
+    case "flow_controller_generic":
     case "grille":
     case "disc_valve":
     case "air_terminal":
@@ -1503,10 +1625,8 @@ export function analyzeTgaObject(
       quantityUnit =
         "St.";
 
-
       quantity =
         1;
-
 
       quantityNote =
         "Bauteil: Stück.";
@@ -1533,7 +1653,13 @@ export function analyzeTgaObject(
 
     name,
 
+    description,
+
+    objectType,
+
     tag,
+
+    layer,
 
     modelName,
 
@@ -1612,9 +1738,6 @@ export function analyzeTgaSelection(
           : [];
 
 
-      /*
-       * Ein Analyseergebnis je tatsächlich ausgewähltem IFC-Objekt.
-       */
       if (
         properties.length > 0
       ) {
@@ -1655,9 +1778,6 @@ export function analyzeTgaSelection(
     }
 
 
-    /*
-     * Fallback ohne detaillierte Properties.
-     */
     result.push(
       analyzeTgaObject(
         entryValue
