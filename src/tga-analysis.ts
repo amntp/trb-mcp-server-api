@@ -3677,13 +3677,9 @@ function bsddScore(
   return score;
 }
 
-
 async function searchBsdd(
-  query:
-    string,
-
-  analysis:
-    TgaAnalysis
+  query: string,
+  analysis: TgaAnalysis
 ): Promise<BsddClassMatch[]> {
 
   const cacheKey =
@@ -3731,8 +3727,9 @@ async function searchBsdd(
 
   const timer =
     setTimeout(
-      () =>
-        controller.abort(),
+      () => {
+        controller.abort();
+      },
       3500
     );
 
@@ -3743,9 +3740,7 @@ async function searchBsdd(
       await fetch(
         url,
         {
-
           headers: {
-
             Accept:
               "application/json",
 
@@ -3778,38 +3773,65 @@ async function searchBsdd(
         >;
 
 
-    const classes =
-      Array.isArray(
-        payload.classes
-      )
-        ? payload.classes
-        : [];
+    const rawClasses:
+      unknown[] =
+        Array.isArray(
+          payload.classes
+        )
+          ? payload.classes
+          : [];
 
 
-    const items =
-
-      classes
-
-        .filter(
+    const classRecords:
+      Record<string, unknown>[] =
+        rawClasses.filter(
           (
-            value
+            value: unknown
           ):
             value is
-              Record<
-                string,
-                unknown
-              > =>
-                Boolean(
-                  value &&
-                  typeof value ===
-                    "object"
-                )
-        )
+              Record<string, unknown> => {
 
-        .map(
+            return (
+              typeof value ===
+                "object"
+              &&
+              value !== null
+            );
+          }
+        );
+
+
+    const items:
+      BsddClassMatch[] =
+        classRecords.map(
           (
-            value
-          ) => {
+            value:
+              Record<string, unknown>
+          ): BsddClassMatch => {
+
+            const relatedIfcRaw =
+              value.relatedIfcEntityNames;
+
+
+            const relatedIfcEntityNames:
+              string[] |
+              undefined =
+
+                Array.isArray(
+                  relatedIfcRaw
+                )
+
+                  ? relatedIfcRaw.filter(
+                      (
+                        ifc: unknown
+                      ):
+                        ifc is string =>
+                          typeof ifc ===
+                          "string"
+                    )
+
+                  : undefined;
+
 
             const item:
               BsddClassMatch = {
@@ -3850,21 +3872,7 @@ async function searchBsdd(
                   ? value.dictionaryUri
                   : undefined,
 
-              relatedIfcEntityNames:
-                Array.isArray(
-                  value.relatedIfcEntityNames
-                )
-                  ? value
-                      .relatedIfcEntityNames
-                      .filter(
-                        (
-                          ifc
-                        ):
-                          ifc is string =>
-                            typeof ifc ===
-                              "string"
-                      )
-                  : undefined,
+              relatedIfcEntityNames,
 
               score:
                 0
@@ -3881,18 +3889,22 @@ async function searchBsdd(
 
             return item;
           }
-        )
+        );
 
-        .sort(
-          (
-            a,
-            b
-          ) =>
-            b.score -
-            a.score
-        )
 
-        .slice(
+    items.sort(
+      (
+        a: BsddClassMatch,
+        b: BsddClassMatch
+      ) =>
+        b.score -
+        a.score
+    );
+
+
+    const result:
+      BsddClassMatch[] =
+        items.slice(
           0,
           8
         );
@@ -3901,7 +3913,6 @@ async function searchBsdd(
     bsddCache.set(
       cacheKey,
       {
-
         expires:
           Date.now()
           +
@@ -3914,12 +3925,12 @@ async function searchBsdd(
           1000,
 
         value:
-          items
+          result
       }
     );
 
 
-    return items;
+    return result;
   }
 
   finally {
@@ -3929,8 +3940,6 @@ async function searchBsdd(
     );
   }
 }
-
-
 /* =========================================================
    bSDD KANN GENERISCHE IFC OBJEKTE HOCHSTUFEN
 ========================================================= */
