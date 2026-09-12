@@ -50,6 +50,7 @@ import {
   describeStore,
   type ViewerState,
 } from "./viewer-state.js";
+import { analyzeTgaSelection } from "./tga-analysis.js";
 import { createTcExtensionHtml } from "./tc-extension-html.js";
 import { TC_EXTENSION_ICON_BASE64 } from "./tc-extension-icon.js";
 
