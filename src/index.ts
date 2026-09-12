@@ -1397,7 +1397,7 @@ function createServer(): McpServer {
 
     const components = analyzeTgaSelection(selection);
 
-    return {
+      return {
       content: [{
         type: "text" as const,
         text: JSON.stringify({
@@ -1407,6 +1407,11 @@ function createServer(): McpServer {
         }, null, 2)
       }],
     };
+  }
+);
+
+srv.tool(
+  "tc_create_viewpoint_from_viewer",
   srv.tool(
     "tc_create_viewpoint_from_viewer",
     "Create a BCF viewpoint on an existing topic directly from the user's LIVE 3D viewer state: perspective camera, selected components (IFC GUIDs) and PNG snapshot. The snapshot is attached server-side and never passes through the model. Requires the 'Agent Eyes' extension panel to be open in Trimble Connect. Typical flow: 1) tc_bcf action topic_create, 2) this tool with the returned topic GUID.",
