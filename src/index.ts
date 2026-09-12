@@ -1366,6 +1366,48 @@ function createServer(): McpServer {
   );
 
   srv.tool(
+  "analyze_selected_tga_component",
+  "Analyze the currently selected TGA/HVAC components in the user's live Trimble Connect 3D viewer.",
+  {},
+  async (_args, extra) => {
+    const token = getToken(extra);
+    const user = await resolveUserKeys(token);
+    const match = getViewerState(user.keys);
+
+    if (!match) {
+      return {
+        content: [{
+          type: "text" as const,
+          text: "No viewer state available. Open Agent Eyes in Trimble Connect first."
+        }],
+        isError: true,
+      };
+    }
+
+    const selection = match.entry.selection ?? [];
+
+    if (selection.length === 0) {
+      return {
+        content: [{
+          type: "text" as const,
+          text: "No object is currently selected in the Trimble Connect viewer."
+        }],
+      };
+    }
+
+    const components = analyzeTgaSelection(selection);
+
+    return {
+      content: [{
+        type: "text" as const,
+        text: JSON.stringify({
+          matched_by: match.matchedBy,
+          selected_count: selection.length,
+          components
+        }, null, 2)
+      }],
+    };
+  srv.tool(
     "tc_create_viewpoint_from_viewer",
     "Create a BCF viewpoint on an existing topic directly from the user's LIVE 3D viewer state: perspective camera, selected components (IFC GUIDs) and PNG snapshot. The snapshot is attached server-side and never passes through the model. Requires the 'Agent Eyes' extension panel to be open in Trimble Connect. Typical flow: 1) tc_bcf action topic_create, 2) this tool with the returned topic GUID.",
     {
