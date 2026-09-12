@@ -1,10 +1,14 @@
 /**
  * "Agent Eyes" Trimble Connect extension.
  *
- * Loaded as a 3D-viewer extension inside Trimble Connect for Browser.
- * Captures the live viewer state including selected IFC objects and their
- * properties, sends it to POST /viewer-state and displays the returned
- * TGA/HVAC analysis directly inside the extension.
+ * Liest den aktuellen Trimble-3D-Viewer aus:
+ * - Auswahl
+ * - IFC-/Produkt-Eigenschaften
+ * - Property Sets
+ * - Kamera / Snapshot
+ *
+ * und sendet die Daten an POST /viewer-state.
+ * Die vom Server zurückgegebene TGA-Auswertung wird direkt angezeigt.
  */
 
 export function createTcExtensionHtml(): string {
@@ -99,6 +103,7 @@ export function createTcExtensionHtml(): string {
     white-space: pre-line;
     font-size: 12px;
     line-height: 1.55;
+    word-break: break-word;
   }
 </style>
 </head>
@@ -142,7 +147,8 @@ export function createTcExtensionHtml(): string {
 
 <p class="note">
 Solange dieses Fenster geöffnet ist, werden Auswahl, IFC-Eigenschaften,
-Kamera und Viewer-Zustand regelmäßig an den TGA-Analyseserver übertragen.
+Produktdaten, Property Sets, Kamera und Viewer-Zustand regelmäßig an den
+TGA-Analyseserver übertragen.
 </p>
 
 <script type="module">
@@ -172,62 +178,107 @@ let dirty = true;
 let pushing = false;
 let lastError = null;
 
+
+/* ---------------------------------------------------------
+   UI HELPERS
+--------------------------------------------------------- */
+
 function setText(el, text, cls) {
   if (!el) return;
+
   el.textContent = text;
   el.className = cls || "";
 }
 
+
 function normalizeToken(value) {
-  if (typeof value !== "string") return null;
+  if (typeof value !== "string") {
+    return null;
+  }
 
   let s = value.trim();
 
-  if (s.toLowerCase().startsWith("bearer ")) {
+  if (
+    s.toLowerCase().startsWith("bearer ")
+  ) {
     s = s.slice(7).trim();
   }
 
-  return s.split(".").length === 3 ? s : null;
+  return s.split(".").length === 3
+    ? s
+    : null;
 }
+
+
+/* ---------------------------------------------------------
+   WORKSPACE EVENTS
+--------------------------------------------------------- */
 
 function onEvent(event, data) {
 
-  if (event === "extension.accessToken") {
+  if (
+    event === "extension.accessToken"
+  ) {
 
-    const tok = normalizeToken(data);
+    const tok =
+      normalizeToken(data);
 
     if (tok) {
-      token = tok;
-      setText(els.auth, "erteilt", "ok");
-      dirty = true;
-    }
 
-    else if (data === "denied") {
-      setText(els.auth, "verweigert", "warn");
+      token = tok;
+
+      setText(
+        els.auth,
+        "erteilt",
+        "ok"
+      );
+
+      dirty = true;
+
+    } else if (
+      data === "denied"
+    ) {
+
+      setText(
+        els.auth,
+        "verweigert",
+        "warn"
+      );
     }
   }
+
 
   if (
     event === "viewer.selectionChanged" ||
     event === "viewer.cameraChanged" ||
     event === "viewer.modelLoaded"
   ) {
+
     dirty = true;
   }
 }
 
 
 /* ---------------------------------------------------------
-   IFC PROPERTIES
+   IFC / PRODUCT PROPERTIES
 --------------------------------------------------------- */
 
-const PROPS_MAX_OBJECTS = 20;
-const PROPS_MAX_GROUPS = 25;
-const PROPS_MAX_PER_GROUP = 50;
+/*
+ * Nicht zu knapp abschneiden.
+ * Gerade Product / Presentation Layers / Pset MEP
+ * benötigen mehr Daten als vorher.
+ */
+const PROPS_MAX_OBJECTS = 30;
+const PROPS_MAX_GROUPS = 80;
+const PROPS_MAX_PER_GROUP = 200;
+
 
 function trimValue(v) {
 
-  if (v === null || v === undefined) {
+  if (
+    v === null ||
+    v === undefined
+  ) {
     return "";
   }
 
@@ -236,40 +287,105 @@ function trimValue(v) {
       ? JSON.stringify(v)
       : String(v);
 
-  return s.length > 200
-    ? s.slice(0, 200) + "…"
+  return s.length > 500
+    ? s.slice(0, 500) + "…"
     : s;
 }
 
+
+/*
+ * Wichtig:
+ *
+ * Vorher wurden aus obj.product nur
+ * name / objectType / description übertragen.
+ *
+ * Jetzt werden ALLE einfachen Product-Felder erhalten.
+ * Dadurch können z.B. Fabrikat, Hersteller, Product Type,
+ * Type Name usw. vom Server ausgewertet werden.
+ */
 function trimObjectProps(obj) {
 
-  const product = obj.product || {};
+  const product =
+    obj.product || {};
+
+
+  const productData = {};
+
+
+  for (
+    const [key, value]
+    of Object.entries(product)
+  ) {
+
+    if (
+      value === null ||
+      value === undefined ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+
+      productData[key] =
+        trimValue(value);
+    }
+  }
+
 
   return {
 
-    runtimeId: obj.id,
+    runtimeId:
+      obj.id,
 
-    class: obj.class,
+    class:
+      obj.class,
 
-    name: product.name,
+    /*
+     * Für Rückwärtskompatibilität
+     */
+    name:
+      product.name,
 
-    objectType: product.objectType,
+    objectType:
+      product.objectType,
 
-    description: product.description,
+    description:
+      product.description,
 
+    /*
+     * Vollständiger Product-Datensatz
+     */
+    product:
+      productData,
+
+    /*
+     * Alle relevanten Property Sets
+     */
     propertySets:
       (obj.properties || [])
-        .slice(0, PROPS_MAX_GROUPS)
+        .slice(
+          0,
+          PROPS_MAX_GROUPS
+        )
         .map((group) => ({
 
-          name: group.name,
+          name:
+            group.name,
 
           props:
             (group.properties || [])
-              .slice(0, PROPS_MAX_PER_GROUP)
+              .slice(
+                0,
+                PROPS_MAX_PER_GROUP
+              )
               .map((p) => ({
-                name: p.name,
-                value: trimValue(p.value)
+
+                name:
+                  p.name,
+
+                value:
+                  trimValue(
+                    p.value
+                  )
               }))
         }))
   };
@@ -283,7 +399,8 @@ function trimObjectProps(obj) {
 async function capture() {
 
   const state = {
-    capturedAt: Date.now()
+    capturedAt:
+      Date.now()
   };
 
 
@@ -298,14 +415,23 @@ async function capture() {
   try {
 
     const models =
-      await api.viewer.getModels("loaded");
+      await api.viewer.getModels(
+        "loaded"
+      );
 
     state.models =
-      (models || []).map((m) => ({
-        id: m.id,
-        versionId: m.versionId,
-        name: m.name
-      }));
+      (models || [])
+        .map((m) => ({
+
+          id:
+            m.id,
+
+          versionId:
+            m.versionId,
+
+          name:
+            m.name
+        }));
 
   } catch {}
 
@@ -315,6 +441,7 @@ async function capture() {
     const selection =
       await api.viewer.getSelection();
 
+
     const entries = [];
 
     let count = 0;
@@ -323,34 +450,54 @@ async function capture() {
       PROPS_MAX_OBJECTS;
 
 
-    for (const sel of selection || []) {
+    for (
+      const sel
+      of selection || []
+    ) {
 
       const runtimeIds =
-        (sel.objectRuntimeIds || [])
-          .slice(0, 500);
+        (
+          sel.objectRuntimeIds ||
+          []
+        )
+          .slice(
+            0,
+            500
+          );
 
-      count += runtimeIds.length;
+
+      count +=
+        runtimeIds.length;
 
 
       const entry = {
 
-        modelId: sel.modelId,
+        modelId:
+          sel.modelId,
 
-        objectRuntimeIds: runtimeIds
+        objectRuntimeIds:
+          runtimeIds
       };
 
 
+      /*
+       * IFC GUID / Object ID
+       */
       try {
 
         entry.externalIds =
-          await api.viewer.convertToObjectIds(
-            sel.modelId,
-            runtimeIds
-          );
+          await api.viewer
+            .convertToObjectIds(
+              sel.modelId,
+              runtimeIds
+            );
 
       } catch {}
 
 
+      /*
+       * Technische Eigenschaften
+       */
       if (
         propsBudget > 0 &&
         runtimeIds.length > 0
@@ -362,38 +509,53 @@ async function capture() {
             propsBudget
           );
 
+
         try {
 
           const rawProps =
-            await api.viewer.getObjectProperties(
-              sel.modelId,
-              propIds
-            );
+            await api.viewer
+              .getObjectProperties(
+                sel.modelId,
+                propIds
+              );
 
 
           entry.properties =
             (rawProps || [])
-              .map((obj, i) => {
+              .map(
+                (obj, i) => {
 
-                const trimmed =
-                  trimObjectProps(obj);
+                  const trimmed =
+                    trimObjectProps(
+                      obj
+                    );
 
-                if (
-                  entry.externalIds &&
-                  entry.externalIds[i]
-                ) {
-                  trimmed.externalId =
-                    entry.externalIds[i];
+
+                  if (
+                    entry.externalIds &&
+                    entry.externalIds[i]
+                  ) {
+
+                    trimmed.externalId =
+                      entry.externalIds[i];
+                  }
+
+
+                  return trimmed;
                 }
-
-                return trimmed;
-              });
+              );
 
 
           propsBudget -=
             propIds.length;
 
-        } catch {}
+        } catch (err) {
+
+          console.warn(
+            "getObjectProperties failed",
+            err
+          );
+        }
       }
 
 
@@ -401,17 +563,21 @@ async function capture() {
         (state.models || [])
           .find(
             (m) =>
-              m.id === sel.modelId
+              m.id ===
+              sel.modelId
           );
 
 
       if (model) {
+
         entry.modelName =
           model.name;
       }
 
 
-      entries.push(entry);
+      entries.push(
+        entry
+      );
     }
 
 
@@ -423,16 +589,27 @@ async function capture() {
       els.selection,
       count +
       " Objekt" +
-      (count === 1 ? "" : "e")
+      (
+        count === 1
+          ? ""
+          : "e"
+      )
     );
 
-  } catch {}
+  } catch (err) {
+
+    console.warn(
+      "Selection capture failed",
+      err
+    );
+  }
 
 
   try {
 
     state.snapshot =
-      await api.viewer.getSnapshot();
+      await api.viewer
+        .getSnapshot();
 
   } catch {}
 
@@ -441,11 +618,14 @@ async function capture() {
 
     state.project = {
 
-      id: project.id,
+      id:
+        project.id,
 
-      name: project.name,
+      name:
+        project.name,
 
-      location: project.location
+      location:
+        project.location
     };
   }
 
@@ -455,30 +635,47 @@ async function capture() {
 
 
 /* ---------------------------------------------------------
-   TGA ANALYSIS DISPLAY
+   TGA RESULT DISPLAY
 --------------------------------------------------------- */
 
-function formatNumber(value, decimals) {
+function formatNumber(
+  value,
+  decimals
+) {
 
-  const n = Number(value);
+  const number =
+    Number(value);
 
-  if (!Number.isFinite(n)) {
+
+  if (
+    !Number.isFinite(number)
+  ) {
     return "-";
   }
 
-  return n.toLocaleString(
-    "de-DE",
-    {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals
-    }
-  );
+
+  return number
+    .toLocaleString(
+      "de-DE",
+      {
+        minimumFractionDigits:
+          decimals,
+
+        maximumFractionDigits:
+          decimals
+      }
+    );
 }
 
 
-function renderTgaAnalysis(list) {
+function renderTgaAnalysis(
+  list
+) {
 
-  if (!list || list.length === 0) {
+  if (
+    !list ||
+    list.length === 0
+  ) {
 
     els.tgaBox.textContent =
       "Kein Bauteil ausgewählt.";
@@ -487,45 +684,72 @@ function renderTgaAnalysis(list) {
   }
 
 
-  const c = list[0];
+  const c =
+    list[0];
 
 
-  let dimension = "-";
+  /* -------------------------
+     Dimension
+  ------------------------- */
+
+  let dimension =
+    "-";
 
 
   if (
-    c.shape === "rectangular"
+    c.shape ===
+      "rectangular"
   ) {
 
     dimension =
-      (c.widthMm != null
-        ? formatNumber(c.widthMm, 0)
-        : "?")
+      (
+        c.widthMm != null
+          ? formatNumber(
+              c.widthMm,
+              0
+            )
+          : "?"
+      )
       +
       " × "
       +
-      (c.heightMm != null
-        ? formatNumber(c.heightMm, 0)
-        : "?")
+      (
+        c.heightMm != null
+          ? formatNumber(
+              c.heightMm,
+              0
+            )
+          : "?"
+      )
       +
       " mm";
   }
 
 
   else if (
-    c.shape === "round"
+    c.shape ===
+      "round"
   ) {
 
     dimension =
       "Ø "
       +
-      (c.diameterMm != null
-        ? formatNumber(c.diameterMm, 0)
-        : "?")
+      (
+        c.diameterMm != null
+          ? formatNumber(
+              c.diameterMm,
+              0
+            )
+          : "?"
+      )
       +
       " mm";
   }
 
+
+  /* -------------------------
+     Volumenstrom
+  ------------------------- */
 
   const flow =
 
@@ -534,10 +758,16 @@ function renderTgaAnalysis(list) {
       ? formatNumber(
           c.airflowM3h,
           0
-        ) + " m³/h"
+        )
+        +
+        " m³/h"
 
       : "-";
 
+
+  /* -------------------------
+     Geschwindigkeit
+  ------------------------- */
 
   const velocity =
 
@@ -546,12 +776,90 @@ function renderTgaAnalysis(list) {
       ? formatNumber(
           c.velocityMs,
           2
-        ) + " m/s"
+        )
+        +
+        " m/s"
 
       : "-";
 
 
-  let quantity = "-";
+  /* -------------------------
+     Länge
+  ------------------------- */
+
+  const length =
+
+    c.lengthMm != null
+
+      ? formatNumber(
+          c.lengthMm /
+          1000,
+          2
+        )
+        +
+        " m"
+
+      : "-";
+
+
+  /* -------------------------
+     Dämmung
+  ------------------------- */
+
+  const insulation =
+
+    c.insulationMm != null
+
+      ? formatNumber(
+          c.insulationMm,
+          0
+        )
+        +
+        " mm"
+
+      : "-";
+
+
+  /* -------------------------
+     Druckverlust
+  ------------------------- */
+
+  const pressureLoss =
+
+    c.pressureLossPa != null
+
+      ? formatNumber(
+          c.pressureLossPa,
+          1
+        )
+        +
+        " Pa"
+
+      : "-";
+
+
+  /* -------------------------
+     Zeta
+  ------------------------- */
+
+  const zeta =
+
+    c.zeta != null
+
+      ? formatNumber(
+          c.zeta,
+          2
+        )
+
+      : "-";
+
+
+  /* -------------------------
+     Menge
+  ------------------------- */
+
+  let quantity =
+    "-";
 
 
   if (
@@ -559,7 +867,8 @@ function renderTgaAnalysis(list) {
   ) {
 
     const decimals =
-      c.quantityUnit === "St."
+      c.quantityUnit ===
+        "St."
         ? 0
         : 2;
 
@@ -572,7 +881,10 @@ function renderTgaAnalysis(list) {
       +
       " "
       +
-      (c.quantityUnit || "");
+      (
+        c.quantityUnit ||
+        ""
+      );
   }
 
 
@@ -585,56 +897,69 @@ function renderTgaAnalysis(list) {
   }
 
 
-  let insulation = "-";
-
-
-  if (
-    c.insulationMm != null
-  ) {
-
-    insulation =
-      formatNumber(
-        c.insulationMm,
-        0
-      )
-      +
-      " mm";
-  }
-
-
-  let length = "-";
-
-
-  if (
-    c.lengthMm != null
-  ) {
-
-    length =
-      formatNumber(
-        c.lengthMm / 1000,
-        2
-      )
-      +
-      " m";
-  }
-
+  /* -------------------------
+     Ausgabe
+  ------------------------- */
 
   const lines = [
 
     "Typ: " +
-      (c.label || "-"),
+      (
+        c.label ||
+        "-"
+      ),
 
     "IFC: " +
-      (c.ifcType || "-"),
+      (
+        c.ifcType ||
+        "-"
+      ),
+
+    "Produkt: " +
+      (
+        c.name ||
+        "-"
+      ),
+
+    "Produkt-Typ: " +
+      (
+        c.productType ||
+        c.objectType ||
+        "-"
+      ),
+
+    "Fabrikat: " +
+      (
+        c.manufacturer ||
+        "-"
+      ),
+
+    "Beschreibung: " +
+      (
+        c.description ||
+        "-"
+      ),
+
+    "Layer: " +
+      (
+        c.layer ||
+        "-"
+      ),
 
     "Dimension: " +
       dimension,
 
     "System: " +
-      (c.system || "-"),
+      (
+        c.system ||
+        "-"
+      ),
 
     "Geschoss: " +
-      (c.storey || "-"),
+      (
+        c.storey ||
+        "-"
+      ),
 
     "Länge: " +
       length,
@@ -648,16 +973,49 @@ function renderTgaAnalysis(list) {
     "Geschwindigkeit: " +
       velocity,
 
+    "Druckverlust: " +
+      pressureLoss,
+
+    "ζ: " +
+      zeta,
+
     "Menge: " +
       quantity
   ];
 
 
-  if (c.quantityNote) {
+  if (
+    c.guid
+  ) {
+
+    lines.push(
+      "IFC GUID: " +
+      c.guid
+    );
+  }
+
+
+  if (
+    c.quantityNote
+  ) {
 
     lines.push(
       "Hinweis: " +
       c.quantityNote
+    );
+  }
+
+
+  if (
+    c.matchedBy &&
+    c.matchedBy.length
+  ) {
+
+    lines.push(
+      "Erkennung: " +
+      c.matchedBy.join(
+        ", "
+      )
     );
   }
 
@@ -683,7 +1041,9 @@ function renderTgaAnalysis(list) {
    PUSH TO SERVER
 --------------------------------------------------------- */
 
-async function push(force) {
+async function push(
+  force
+) {
 
   if (
     !api ||
@@ -702,7 +1062,8 @@ async function push(force) {
   }
 
 
-  pushing = true;
+  pushing =
+    true;
 
 
   try {
@@ -716,7 +1077,8 @@ async function push(force) {
         PUSH_URL,
         {
 
-          method: "POST",
+          method:
+            "POST",
 
           headers: {
 
@@ -724,23 +1086,32 @@ async function push(force) {
               "application/json",
 
             Authorization:
-              "Bearer " + token
+              "Bearer " +
+              token
           },
 
           body:
-            JSON.stringify(state)
+            JSON.stringify(
+              state
+            )
         }
       );
 
 
-    if (!res.ok) {
+    if (
+      !res.ok
+    ) {
 
-      let detail = "";
+      let detail =
+        "";
+
 
       try {
 
         detail =
-          (await res.json()).error ||
+          (
+            await res.json()
+          ).error ||
           "";
 
       } catch {}
@@ -753,7 +1124,8 @@ async function push(force) {
         +
         (
           detail
-            ? " - " + detail
+            ? " - " +
+              detail
             : ""
         )
       );
@@ -765,19 +1137,25 @@ async function push(force) {
 
 
     renderTgaAnalysis(
-      data.tgaAnalysis || []
+      data.tgaAnalysis ||
+      []
     );
 
 
-    dirty = false;
+    dirty =
+      false;
 
-    lastError = null;
+
+    lastError =
+      null;
 
 
     setText(
       els.sync,
       new Date()
-        .toLocaleTimeString("de-DE"),
+        .toLocaleTimeString(
+          "de-DE"
+        ),
       "ok"
     );
 
@@ -806,13 +1184,14 @@ async function push(force) {
 
   finally {
 
-    pushing = false;
+    pushing =
+      false;
   }
 }
 
 
 /* ---------------------------------------------------------
-   INITIALISATION
+   INITIALISIERUNG
 --------------------------------------------------------- */
 
 async function init() {
@@ -875,12 +1254,16 @@ async function init() {
 
 
     const tok =
-      normalizeToken(result);
+      normalizeToken(
+        result
+      );
 
 
     if (tok) {
 
-      token = tok;
+      token =
+        tok;
+
 
       setText(
         els.auth,
@@ -891,7 +1274,8 @@ async function init() {
 
 
     else if (
-      result === "denied"
+      result ===
+      "denied"
     ) {
 
       setText(
@@ -929,16 +1313,22 @@ async function init() {
 
   els.btn.addEventListener(
     "click",
-    () => push(true)
+    () =>
+      push(true)
   );
 
 
   setInterval(
-    () => push(false),
+    () =>
+      push(false),
     PUSH_INTERVAL_MS
   );
 
 
+  /*
+   * Auch ohne Viewer-Event regelmäßig
+   * neu lesen.
+   */
   setInterval(
     () => {
       dirty = true;
