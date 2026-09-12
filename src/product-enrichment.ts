@@ -95,6 +95,13 @@ const KNOWN_PRODUCTS: KnownProduct[] = [
   },
 ];
 
+function envValue(name: string): string | undefined {
+  const root = globalThis as unknown as {
+    process?: { env?: Record<string, string | undefined> };
+  };
+  return root.process?.env?.[name];
+}
+
 function normalize(value: unknown): string {
   return String(value ?? "")
     .trim()
@@ -122,7 +129,6 @@ function joinedText(input: ProductEnrichmentInput): string {
 
 function findKnownProduct(input: ProductEnrichmentInput): KnownProduct | undefined {
   const text = normalize(joinedText(input));
-
   return KNOWN_PRODUCTS.find((product) =>
     product.aliases.some((alias) => text.includes(normalize(alias)))
   );
@@ -140,14 +146,11 @@ function parseKnownDimensions(
   };
 
   if (!known) return result;
-
   const raw = joinedText(input).replace(/×/g, "x");
 
   if (known.series === "FKRS-EU") {
     const match = raw.match(/FKRS[- ]?EU(?:\/DE)?\/(\d{2,4})(?:\/|$)/i);
-    if (match && result.diameterMm === undefined) {
-      result.diameterMm = Number(match[1]);
-    }
+    if (match && result.diameterMm === undefined) result.diameterMm = Number(match[1]);
   }
 
   if (known.series === "FK2-EU") {
@@ -172,14 +175,12 @@ function buildQuery(input: ProductEnrichmentInput, known: KnownProduct | undefin
     input.description,
     input.name,
   ].filter((value): value is string => Boolean(value && value.trim()));
-
   return Array.from(new Set(values)).join(" ").trim();
 }
 
 function firstArray(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (!value || typeof value !== "object") return [];
-
   const record = value as Record<string, unknown>;
   for (const key of ["items", "results", "products", "data", "entries"]) {
     if (Array.isArray(record[key])) return record[key] as unknown[];
@@ -199,7 +200,6 @@ function parseProviderItem(
 ): ProductSourceRecord | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
-
   return {
     source,
     title: asString(record.title ?? record.name ?? record.productName),
@@ -218,12 +218,7 @@ async function queryConfiguredProvider(
   token: string | undefined,
   query: string
 ): Promise<{ status: ProductProviderStatus; records: ProductSourceRecord[] }> {
-  if (!endpointTemplate) {
-    return {
-      status: "api-not-configured",
-      records: [],
-    };
-  }
+  if (!endpointTemplate) return { status: "api-not-configured", records: [] };
 
   const endpoint = endpointTemplate.includes("{query}")
     ? endpointTemplate.replace("{query}", encodeURIComponent(query))
@@ -237,7 +232,6 @@ async function queryConfiguredProvider(
       Accept: "application/json",
       "X-User-Agent": "AgentEyes/2.2",
     };
-
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const response = await fetch(endpoint, {
@@ -246,12 +240,7 @@ async function queryConfiguredProvider(
       signal: controller.signal,
     });
 
-    if (!response.ok) {
-      return {
-        status: "api-error",
-        records: [],
-      };
-    }
+    if (!response.ok) return { status: "api-error", records: [] };
 
     const payload: unknown = await response.json();
     const records = firstArray(payload)
@@ -259,15 +248,9 @@ async function queryConfiguredProvider(
       .filter((item): item is ProductSourceRecord => Boolean(item))
       .slice(0, 5);
 
-    return {
-      status: "api-configured",
-      records,
-    };
+    return { status: "api-configured", records };
   } catch {
-    return {
-      status: "api-error",
-      records: [],
-    };
+    return { status: "api-error", records: [] };
   } finally {
     clearTimeout(timer);
   }
@@ -298,14 +281,14 @@ export async function enrichProductData(
   const [ausschreiben, bimobject] = await Promise.all([
     queryConfiguredProvider(
       "ausschreiben.de",
-      process.env.AUSSCHREIBEN_API_SEARCH_URL,
-      process.env.AUSSCHREIBEN_API_TOKEN,
+      envValue("AUSSCHREIBEN_API_SEARCH_URL"),
+      envValue("AUSSCHREIBEN_API_TOKEN"),
       query
     ),
     queryConfiguredProvider(
       "BIMobject",
-      process.env.BIMOBJECT_API_SEARCH_URL,
-      process.env.BIMOBJECT_API_TOKEN,
+      envValue("BIMOBJECT_API_SEARCH_URL"),
+      envValue("BIMOBJECT_API_TOKEN"),
       query
     ),
   ]);
