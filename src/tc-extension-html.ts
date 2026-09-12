@@ -1,14 +1,8 @@
 /**
  * "Agent Eyes" Trimble Connect extension.
  *
- * Liest den aktuellen Trimble-3D-Viewer aus:
- * - Auswahl
- * - IFC-/Produkt-Eigenschaften
- * - Property Sets
- * - Kamera / Snapshot
- *
- * und sendet die Daten an POST /viewer-state.
- * Die vom Server zurückgegebene TGA-Auswertung wird direkt angezeigt.
+ * Liest Auswahl + IFC-/Produkt-Eigenschaften + Property Sets aus dem Viewer,
+ * sendet sie an POST /viewer-state und zeigt die TGA-Auswertung an.
  */
 
 export function createTcExtensionHtml(): string {
@@ -17,126 +11,32 @@ export function createTcExtensionHtml(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <title>Agent Eyes</title>
-
 <style>
-  body {
-    font-family: "Open Sans", system-ui, sans-serif;
-    margin: 0;
-    padding: 16px;
-    color: #252a2e;
-    font-size: 13px;
-  }
-
-  h1 {
-    font-size: 15px;
-    margin: 0 0 4px;
-  }
-
-  .sub {
-    color: #6a6e79;
-    margin: 0 0 16px;
-  }
-
-  .row {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 6px 0;
-    border-bottom: 1px solid #e0e1e9;
-  }
-
-  .row .label {
-    color: #6a6e79;
-  }
-
-  .ok {
-    color: #006638;
-    font-weight: 600;
-  }
-
-  .warn {
-    color: #da212c;
-    font-weight: 600;
-  }
-
-  button {
-    margin-top: 16px;
-    width: 100%;
-    padding: 8px 12px;
-    border: none;
-    border-radius: 4px;
-    background: #0063a3;
-    color: #fff;
-    font-size: 13px;
-    cursor: pointer;
-  }
-
-  button:disabled {
-    background: #b7b9c3;
-    cursor: default;
-  }
-
-  .note {
-    margin-top: 12px;
-    color: #6a6e79;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
-  .tga-box {
-    margin-top: 14px;
-    padding: 10px;
-    border: 1px solid #d9e1e8;
-    border-radius: 6px;
-    background: #f7f9fb;
-  }
-
-  .tga-title {
-    font-weight: 700;
-    margin-bottom: 8px;
-    font-size: 13px;
-  }
-
-  .tga-result {
-    white-space: pre-line;
-    font-size: 12px;
-    line-height: 1.55;
-    word-break: break-word;
-  }
+  body { font-family: "Open Sans", system-ui, sans-serif; margin:0; padding:16px; color:#252a2e; font-size:13px; }
+  h1 { font-size:15px; margin:0 0 4px; }
+  .sub { color:#6a6e79; margin:0 0 16px; }
+  .row { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #e0e1e9; }
+  .row .label { color:#6a6e79; }
+  .ok { color:#006638; font-weight:600; }
+  .warn { color:#da212c; font-weight:600; }
+  button { margin-top:16px; width:100%; padding:8px 12px; border:0; border-radius:4px; background:#0063a3; color:#fff; font-size:13px; cursor:pointer; }
+  button:disabled { background:#b7b9c3; cursor:default; }
+  .note { margin-top:12px; color:#6a6e79; font-size:12px; line-height:1.5; }
+  .tga-box { margin-top:14px; padding:10px; border:1px solid #d9e1e8; border-radius:6px; background:#f7f9fb; }
+  .tga-title { font-weight:700; margin-bottom:8px; font-size:13px; }
+  .tga-result { white-space:pre-line; font-size:12px; line-height:1.55; word-break:break-word; }
 </style>
 </head>
-
 <body>
-
 <h1>Agent Eyes</h1>
 <p class="sub">TGA-Auswertung direkt aus dem Trimble-3D-Modell</p>
 
-<div class="row">
-  <span class="label">Verbindung</span>
-  <span id="conn">…</span>
-</div>
-
-<div class="row">
-  <span class="label">Autorisierung</span>
-  <span id="auth">…</span>
-</div>
-
-<div class="row">
-  <span class="label">Projekt</span>
-  <span id="project">–</span>
-</div>
-
-<div class="row">
-  <span class="label">Auswahl</span>
-  <span id="selection">0 Objekte</span>
-</div>
-
-<div class="row">
-  <span class="label">Letzte Synchronisierung</span>
-  <span id="sync">noch nie</span>
-</div>
+<div class="row"><span class="label">Verbindung</span><span id="conn">…</span></div>
+<div class="row"><span class="label">Autorisierung</span><span id="auth">…</span></div>
+<div class="row"><span class="label">Projekt</span><span id="project">–</span></div>
+<div class="row"><span class="label">Auswahl</span><span id="selection">0 Objekte</span></div>
+<div class="row"><span class="label">Letzte Synchronisierung</span><span id="sync">noch nie</span></div>
 
 <div class="tga-box">
   <div class="tga-title">TGA Analyse</div>
@@ -146,9 +46,7 @@ export function createTcExtensionHtml(): string {
 <button id="syncBtn" disabled>Jetzt synchronisieren</button>
 
 <p class="note">
-Solange dieses Fenster geöffnet ist, werden Auswahl, IFC-Eigenschaften,
-Produktdaten, Property Sets, Kamera und Viewer-Zustand regelmäßig an den
-TGA-Analyseserver übertragen.
+Auswahl, IFC-Eigenschaften, Produktdaten und Property Sets werden an den TGA-Analyseserver übertragen.
 </p>
 
 <script type="module">
@@ -176,12 +74,7 @@ let token = null;
 let project = null;
 let dirty = true;
 let pushing = false;
-let lastError = null;
 
-
-/* ---------------------------------------------------------
-   UI HELPERS
---------------------------------------------------------- */
 
 function setText(el, text, cls) {
   if (!el) return;
@@ -192,16 +85,22 @@ function setText(el, text, cls) {
 
 
 function normalizeToken(value) {
+
   if (typeof value !== "string") {
     return null;
   }
 
-  let s = value.trim();
+  let s =
+    value.trim();
 
   if (
-    s.toLowerCase().startsWith("bearer ")
+    s.toLowerCase()
+      .startsWith("bearer ")
   ) {
-    s = s.slice(7).trim();
+
+    s =
+      s.slice(7)
+        .trim();
   }
 
   return s.split(".").length === 3
@@ -209,10 +108,6 @@ function normalizeToken(value) {
     : null;
 }
 
-
-/* ---------------------------------------------------------
-   WORKSPACE EVENTS
---------------------------------------------------------- */
 
 function onEvent(event, data) {
 
@@ -234,8 +129,9 @@ function onEvent(event, data) {
       );
 
       dirty = true;
+    }
 
-    } else if (
+    else if (
       data === "denied"
     ) {
 
@@ -259,15 +155,10 @@ function onEvent(event, data) {
 }
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    IFC / PRODUCT PROPERTIES
---------------------------------------------------------- */
+========================================================= */
 
-/*
- * Nicht zu knapp abschneiden.
- * Gerade Product / Presentation Layers / Pset MEP
- * benötigen mehr Daten als vorher.
- */
 const PROPS_MAX_OBJECTS = 30;
 const PROPS_MAX_GROUPS = 80;
 const PROPS_MAX_PER_GROUP = 200;
@@ -293,21 +184,10 @@ function trimValue(v) {
 }
 
 
-/*
- * Wichtig:
- *
- * Vorher wurden aus obj.product nur
- * name / objectType / description übertragen.
- *
- * Jetzt werden ALLE einfachen Product-Felder erhalten.
- * Dadurch können z.B. Fabrikat, Hersteller, Product Type,
- * Type Name usw. vom Server ausgewertet werden.
- */
 function trimObjectProps(obj) {
 
   const product =
     obj.product || {};
-
 
   const productData = {};
 
@@ -339,9 +219,6 @@ function trimObjectProps(obj) {
     class:
       obj.class,
 
-    /*
-     * Für Rückwärtskompatibilität
-     */
     name:
       product.name,
 
@@ -351,50 +228,48 @@ function trimObjectProps(obj) {
     description:
       product.description,
 
-    /*
-     * Vollständiger Product-Datensatz
-     */
     product:
       productData,
 
-    /*
-     * Alle relevanten Property Sets
-     */
     propertySets:
       (obj.properties || [])
         .slice(
           0,
           PROPS_MAX_GROUPS
         )
-        .map((group) => ({
+        .map(
+          (group) => ({
 
-          name:
-            group.name,
+            name:
+              group.name,
 
-          props:
-            (group.properties || [])
-              .slice(
-                0,
-                PROPS_MAX_PER_GROUP
-              )
-              .map((p) => ({
+            props:
+              (group.properties || [])
+                .slice(
+                  0,
+                  PROPS_MAX_PER_GROUP
+                )
+                .map(
+                  (p) => ({
 
-                name:
-                  p.name,
+                    name:
+                      p.name,
 
-                value:
-                  trimValue(
-                    p.value
-                  )
-              }))
-        }))
+                    value:
+                      trimValue(
+                        p.value
+                      )
+                  })
+                )
+          })
+        )
   };
 }
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    VIEWER CAPTURE
---------------------------------------------------------- */
+========================================================= */
 
 async function capture() {
 
@@ -407,7 +282,8 @@ async function capture() {
   try {
 
     state.camera =
-      await api.viewer.getCamera();
+      await api.viewer
+        .getCamera();
 
   } catch {}
 
@@ -415,23 +291,27 @@ async function capture() {
   try {
 
     const models =
-      await api.viewer.getModels(
-        "loaded"
-      );
+      await api.viewer
+        .getModels(
+          "loaded"
+        );
+
 
     state.models =
       (models || [])
-        .map((m) => ({
+        .map(
+          (m) => ({
 
-          id:
-            m.id,
+            id:
+              m.id,
 
-          versionId:
-            m.versionId,
+            versionId:
+              m.versionId,
 
-          name:
-            m.name
-        }));
+            name:
+              m.name
+          })
+        );
 
   } catch {}
 
@@ -439,7 +319,8 @@ async function capture() {
   try {
 
     const selection =
-      await api.viewer.getSelection();
+      await api.viewer
+        .getSelection();
 
 
     const entries = [];
@@ -480,9 +361,6 @@ async function capture() {
       };
 
 
-      /*
-       * IFC GUID / Object ID
-       */
       try {
 
         entry.externalIds =
@@ -495,9 +373,6 @@ async function capture() {
       } catch {}
 
 
-      /*
-       * Technische Eigenschaften
-       */
       if (
         propsBudget > 0 &&
         runtimeIds.length > 0
@@ -549,7 +424,9 @@ async function capture() {
           propsBudget -=
             propIds.length;
 
-        } catch (err) {
+        }
+
+        catch (err) {
 
           console.warn(
             "getObjectProperties failed",
@@ -588,15 +465,17 @@ async function capture() {
     setText(
       els.selection,
       count +
-      " Objekt" +
-      (
-        count === 1
-          ? ""
-          : "e"
-      )
+        " Objekt" +
+        (
+          count === 1
+            ? ""
+            : "e"
+        )
     );
 
-  } catch (err) {
+  }
+
+  catch (err) {
 
     console.warn(
       "Selection capture failed",
@@ -634,9 +513,9 @@ async function capture() {
 }
 
 
-/* ---------------------------------------------------------
-   TGA RESULT DISPLAY
---------------------------------------------------------- */
+/* =========================================================
+   TGA DISPLAY
+========================================================= */
 
 function formatNumber(
   value,
@@ -650,6 +529,7 @@ function formatNumber(
   if (
     !Number.isFinite(number)
   ) {
+
     return "-";
   }
 
@@ -658,6 +538,7 @@ function formatNumber(
     .toLocaleString(
       "de-DE",
       {
+
         minimumFractionDigits:
           decimals,
 
@@ -688,10 +569,6 @@ function renderTgaAnalysis(
     list[0];
 
 
-  /* -------------------------
-     Dimension
-  ------------------------- */
-
   let dimension =
     "-";
 
@@ -702,6 +579,7 @@ function renderTgaAnalysis(
   ) {
 
     dimension =
+
       (
         c.widthMm != null
           ? formatNumber(
@@ -710,9 +588,13 @@ function renderTgaAnalysis(
             )
           : "?"
       )
+
       +
+
       " × "
+
       +
+
       (
         c.heightMm != null
           ? formatNumber(
@@ -721,7 +603,9 @@ function renderTgaAnalysis(
             )
           : "?"
       )
+
       +
+
       " mm";
   }
 
@@ -732,8 +616,11 @@ function renderTgaAnalysis(
   ) {
 
     dimension =
+
       "Ø "
+
       +
+
       (
         c.diameterMm != null
           ? formatNumber(
@@ -742,14 +629,12 @@ function renderTgaAnalysis(
             )
           : "?"
       )
+
       +
+
       " mm";
   }
 
-
-  /* -------------------------
-     Volumenstrom
-  ------------------------- */
 
   const flow =
 
@@ -758,16 +643,11 @@ function renderTgaAnalysis(
       ? formatNumber(
           c.airflowM3h,
           0
-        )
-        +
+        ) +
         " m³/h"
 
       : "-";
 
-
-  /* -------------------------
-     Geschwindigkeit
-  ------------------------- */
 
   const velocity =
 
@@ -776,16 +656,11 @@ function renderTgaAnalysis(
       ? formatNumber(
           c.velocityMs,
           2
-        )
-        +
+        ) +
         " m/s"
 
       : "-";
 
-
-  /* -------------------------
-     Länge
-  ------------------------- */
 
   const length =
 
@@ -795,16 +670,11 @@ function renderTgaAnalysis(
           c.lengthMm /
           1000,
           2
-        )
-        +
+        ) +
         " m"
 
       : "-";
 
-
-  /* -------------------------
-     Dämmung
-  ------------------------- */
 
   const insulation =
 
@@ -813,16 +683,11 @@ function renderTgaAnalysis(
       ? formatNumber(
           c.insulationMm,
           0
-        )
-        +
+        ) +
         " mm"
 
       : "-";
 
-
-  /* -------------------------
-     Druckverlust
-  ------------------------- */
 
   const pressureLoss =
 
@@ -831,16 +696,11 @@ function renderTgaAnalysis(
       ? formatNumber(
           c.pressureLossPa,
           1
-        )
-        +
+        ) +
         " Pa"
 
       : "-";
 
-
-  /* -------------------------
-     Zeta
-  ------------------------- */
 
   const zeta =
 
@@ -853,10 +713,6 @@ function renderTgaAnalysis(
 
       : "-";
 
-
-  /* -------------------------
-     Menge
-  ------------------------- */
 
   let quantity =
     "-";
@@ -874,13 +730,18 @@ function renderTgaAnalysis(
 
 
     quantity =
+
       formatNumber(
         c.quantity,
         decimals
       )
+
       +
+
       " "
+
       +
+
       (
         c.quantityUnit ||
         ""
@@ -896,10 +757,6 @@ function renderTgaAnalysis(
       c.quantityUnit;
   }
 
-
-  /* -------------------------
-     Ausgabe
-  ------------------------- */
 
   const lines = [
 
@@ -1013,9 +870,8 @@ function renderTgaAnalysis(
 
     lines.push(
       "Erkennung: " +
-      c.matchedBy.join(
-        ", "
-      )
+      c.matchedBy
+        .join(", ")
     );
   }
 
@@ -1037,9 +893,9 @@ function renderTgaAnalysis(
 }
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    PUSH TO SERVER
---------------------------------------------------------- */
+========================================================= */
 
 async function push(
   force
@@ -1050,6 +906,7 @@ async function push(
     !token ||
     pushing
   ) {
+
     return;
   }
 
@@ -1058,12 +915,12 @@ async function push(
     !dirty &&
     !force
   ) {
+
     return;
   }
 
 
-  pushing =
-    true;
+  pushing = true;
 
 
   try {
@@ -1146,10 +1003,6 @@ async function push(
       false;
 
 
-    lastError =
-      null;
-
-
     setText(
       els.sync,
       new Date()
@@ -1164,10 +1017,6 @@ async function push(
 
   catch (err) {
 
-    lastError =
-      String(err);
-
-
     setText(
       els.sync,
       "Fehler",
@@ -1178,7 +1027,7 @@ async function push(
     els.tgaBox.textContent =
       "TGA-Auswertung fehlgeschlagen:\\n"
       +
-      lastError;
+      String(err);
   }
 
 
@@ -1190,9 +1039,9 @@ async function push(
 }
 
 
-/* ---------------------------------------------------------
+/* =========================================================
    INITIALISIERUNG
---------------------------------------------------------- */
+========================================================= */
 
 async function init() {
 
@@ -1215,7 +1064,7 @@ async function init() {
   }
 
 
-  catch (err) {
+  catch {
 
     setText(
       els.conn,
@@ -1325,10 +1174,6 @@ async function init() {
   );
 
 
-  /*
-   * Auch ohne Viewer-Event regelmäßig
-   * neu lesen.
-   */
   setInterval(
     () => {
       dirty = true;
@@ -1341,7 +1186,6 @@ async function init() {
 init();
 
 </script>
-
 </body>
 </html>`;
 }
