@@ -1,21 +1,97 @@
+export type TgaDomain =
+  | "ventilation"
+  | "heating"
+  | "cooling"
+  | "plumbing"
+  | "automation"
+  | "electrical"
+  | "generic_mep"
+  | "unknown";
+
 export type TgaComponentType =
   | "duct_segment"
   | "duct_fitting"
   | "fire_damper"
   | "volume_flow_controller"
-  | "flow_controller_generic"
+  | "damper"
+  | "air_terminal"
   | "grille"
   | "disc_valve"
-  | "air_terminal"
   | "silencer"
-  | "louver_damper"
-  | "shutoff_damper"
+  | "fan"
+  | "filter"
+  | "air_handling_unit"
+  | "heat_recovery"
+  | "coil"
+  | "pipe_segment"
+  | "pipe_fitting"
+  | "valve"
+  | "pump"
+  | "boiler"
+  | "chiller"
+  | "heat_pump"
+  | "heat_exchanger"
+  | "radiator"
+  | "tank"
+  | "water_heater"
+  | "sanitary_terminal"
+  | "waste_terminal"
+  | "interceptor"
+  | "sensor"
+  | "actuator"
+  | "controller"
+  | "meter"
+  | "cable_segment"
+  | "cable_carrier"
+  | "distribution_board"
+  | "switching_device"
+  | "protective_device"
+  | "outlet"
+  | "light_fixture"
+  | "transformer"
+  | "electric_motor"
+  | "communications_appliance"
   | "insulation"
-  | "damper_generic"
+  | "flow_controller_generic"
+  | "flow_terminal_generic"
+  | "flow_moving_device_generic"
+  | "flow_treatment_device_generic"
+  | "energy_conversion_device_generic"
   | "unknown";
 
 
+export interface BsddClassMatch {
+
+  name?:
+    string;
+
+  referenceCode?:
+    string;
+
+  uri?:
+    string;
+
+  description?:
+    string;
+
+  dictionaryName?:
+    string;
+
+  dictionaryUri?:
+    string;
+
+  relatedIfcEntityNames?:
+    string[];
+
+  score:
+    number;
+}
+
+
 export interface TgaAnalysis {
+
+  domain:
+    TgaDomain;
 
   type:
     TgaComponentType;
@@ -121,16 +197,58 @@ export interface TgaAnalysis {
   matchedBy:
     string[];
 
+  bsddMatches?:
+    BsddClassMatch[];
+
+  etimMatches?:
+    BsddClassMatch[];
+
+  vdi3805Scope?:
+    string;
+
+  bimStatus?:
+    "local-only" |
+    "bsdd-enriched" |
+    "bsdd-unavailable";
+
   rawProperties:
     Record<string, unknown>;
 }
+
+
+type Rule = {
+
+  domain:
+    TgaDomain;
+
+  type:
+    TgaComponentType;
+
+  label:
+    string;
+
+  ifc?:
+    string[];
+
+  predefined?:
+    string[];
+
+  layer?:
+    string[];
+
+  terms?:
+    string[];
+
+  bsdd?:
+    string[];
+};
 
 
 /* =========================================================
    NORMALISIERUNG
 ========================================================= */
 
-function n(
+function norm(
   value: unknown
 ): string {
 
@@ -157,7 +275,7 @@ function n(
       "ss"
     )
     .replace(
-      /[_\-\/]+/g,
+      /[\/_\-]+/g,
       " "
     )
     .replace(
@@ -182,13 +300,17 @@ function primitive(
 
 
 /* =========================================================
-   PROPERTY FLATTENING
+   TRIMBLE PROPERTY FLATTENING
 ========================================================= */
 
 function flatten(
   value: unknown,
   prefix = "",
-  out: Record<string, unknown> = {}
+  out:
+    Record<
+      string,
+      unknown
+    > = {}
 ): Record<string, unknown> {
 
   if (
@@ -214,9 +336,13 @@ function flatten(
 
         flatten(
           item,
+
           prefix
-            ? \`\${prefix}.\${index}\`
-            : String(index),
+            ? `${prefix}.${index}`
+            : String(
+                index
+              ),
+
           out
         );
       }
@@ -250,24 +376,32 @@ function flatten(
       >;
 
 
+  /*
+   * Trimble:
+   *
+   * {
+   *   name: "Layer",
+   *   value: "L_BSK"
+   * }
+   */
   if (
     typeof obj.name ===
       "string" &&
+
     Object.prototype
       .hasOwnProperty
       .call(
         obj,
         "value"
       ) &&
+
     primitive(
       obj.value
     )
   ) {
 
     const key =
-      String(
-        obj.name
-      ).trim();
+      obj.name.trim();
 
 
     if (key) {
@@ -289,7 +423,7 @@ function flatten(
       if (prefix) {
 
         out[
-          \`\${prefix}.\${key}\`
+          `${prefix}.${key}`
         ] =
           obj.value;
       }
@@ -300,18 +434,25 @@ function flatten(
   }
 
 
+  /*
+   * Property Sets:
+   * Product
+   * Pset MEP
+   * Presentation Layers
+   * Calculated Geometry Values
+   * usw.
+   */
   if (
     typeof obj.name ===
       "string" &&
+
     Array.isArray(
       obj.props
     )
   ) {
 
-    const groupName =
-      String(
-        obj.name
-      ).trim();
+    const group =
+      obj.name.trim();
 
 
     for (
@@ -340,6 +481,7 @@ function flatten(
       if (
         typeof prop.name !==
           "string" ||
+
         !Object.prototype
           .hasOwnProperty
           .call(
@@ -353,9 +495,7 @@ function flatten(
 
 
       const key =
-        String(
-          prop.name
-        ).trim();
+        prop.name.trim();
 
 
       if (!key) {
@@ -378,12 +518,10 @@ function flatten(
       }
 
 
-      if (
-        groupName
-      ) {
+      if (group) {
 
         out[
-          \`\${groupName}.\${key}\`
+          `${group}.${key}`
         ] =
           prop.value;
       }
@@ -414,7 +552,7 @@ function flatten(
 
     const path =
       prefix
-        ? \`\${prefix}.\${key}\`
+        ? `${prefix}.${key}`
         : key;
 
 
@@ -447,12 +585,13 @@ function flatten(
    PROPERTY LOOKUP
 ========================================================= */
 
-function find(
+function findValue(
   flat:
     Record<
       string,
       unknown
     >,
+
   aliases:
     string[]
 ): unknown {
@@ -463,56 +602,69 @@ function find(
     );
 
 
+  /*
+   * Exakte Property zuerst.
+   */
   for (
     const alias
     of aliases
   ) {
 
     const wanted =
-      n(alias);
+      norm(
+        alias
+      );
 
 
-    const result =
+    const hit =
       entries.find(
         ([key]) =>
-          n(
+          norm(
             key
               .split(".")
               .pop()
-          ) ===
+          )
+          ===
           wanted
       );
 
 
-    if (result) {
+    if (hit) {
 
-      return result[1];
+      return hit[1];
     }
   }
 
 
+  /*
+   * Danach Property-Pfad.
+   */
   for (
     const alias
     of aliases
   ) {
 
     const wanted =
-      n(alias);
+      norm(
+        alias
+      );
 
 
-    const result =
+    const hit =
       entries.find(
         ([key]) =>
-          n(key)
+          norm(
+            key
+          )
             .includes(
               wanted
             )
       );
 
 
-    if (result) {
+    if (hit) {
 
-      return result[1];
+      return hit[1];
     }
   }
 
@@ -521,18 +673,19 @@ function find(
 }
 
 
-function text(
+function txt(
   flat:
     Record<
       string,
       unknown
     >,
+
   aliases:
     string[]
 ): string | undefined {
 
   const value =
-    find(
+    findValue(
       flat,
       aliases
     );
@@ -547,13 +700,13 @@ function text(
   }
 
 
-  const s =
+  const text =
     String(
       value
     ).trim();
 
 
-  return s ||
+  return text ||
     undefined;
 }
 
@@ -565,6 +718,7 @@ function numeric(
   if (
     typeof value ===
       "number" &&
+
     Number.isFinite(
       value
     )
@@ -583,7 +737,7 @@ function numeric(
   }
 
 
-  const s =
+  const text =
     String(
       value
     )
@@ -602,22 +756,22 @@ function numeric(
       );
 
 
-  if (!s) {
+  if (!text) {
 
     return undefined;
   }
 
 
-  const v =
+  const number =
     Number.parseFloat(
-      s
+      text
     );
 
 
   return Number.isFinite(
-    v
+    number
   )
-    ? v
+    ? number
     : undefined;
 }
 
@@ -628,12 +782,13 @@ function num(
       string,
       unknown
     >,
+
   aliases:
     string[]
 ): number | undefined {
 
   return numeric(
-    find(
+    findValue(
       flat,
       aliases
     )
@@ -641,7 +796,7 @@ function num(
 }
 
 
-function allText(
+function blob(
   flat:
     Record<
       string,
@@ -649,7 +804,8 @@ function allText(
     >
 ): string {
 
-  return n(
+  return norm(
+
     Object.entries(
       flat
     )
@@ -660,37 +816,1385 @@ function allText(
             value
           ]
         ) =>
-          \`\${key} \${String(
+          `${key} ${String(
             value ??
             ""
-          )}\`
+          )}`
       )
-      .join(" ")
+      .join(
+        " "
+      )
   );
 }
 
 
-function has(
-  value: string,
-  terms: string[]
+function any(
+  haystack:
+    string,
+
+  needles?:
+    string[]
 ): boolean {
 
-  return terms.some(
-    (
-      term
-    ) =>
-      value.includes(
-        n(term)
+  return Boolean(
+    needles
+      ?.some(
+        (
+          item
+        ) =>
+          haystack
+            .includes(
+              norm(
+                item
+              )
+            )
       )
   );
 }
 
 
 /* =========================================================
-   DIMENSIONS
+   ZENTRALE TGA / BIM BIBLIOTHEK
 ========================================================= */
 
-function parseDimensions(
+const RULES:
+  Rule[] = [
+
+  /* -------------------------------------------------------
+     LÜFTUNG / RLT
+  ------------------------------------------------------- */
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "fire_damper",
+
+    label:
+      "Brandschutzklappe (BSK)",
+
+    predefined:
+      [
+        "FIREDAMPER",
+        "FIRESMOKEDAMPER"
+      ],
+
+    layer:
+      [
+        "L_BSK",
+        "BSK"
+      ],
+
+    terms:
+      [
+        "Brandschutzklappe",
+        "Brandklappe",
+        "Fire Damper",
+        "FK2-EU",
+        "FK-EU",
+        "FKRS-EU",
+        "FK90",
+        "FR90"
+      ],
+
+    bsdd:
+      [
+        "fire damper",
+        "brandschutzklappe"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "volume_flow_controller",
+
+    label:
+      "Volumenstromregler (VSR)",
+
+    layer:
+      [
+        "L_VSR",
+        "VSR"
+      ],
+
+    terms:
+      [
+        "Volumenstromregler",
+        "Volumenstrombegrenzer",
+        "Luftmengenregler",
+        "VARYCONTROL",
+        "VAV",
+        "CAV",
+        "TVR",
+        "TVJ",
+        "TVZ",
+        "TVE",
+        "VFC"
+      ],
+
+    bsdd:
+      [
+        "volume flow controller",
+        "air volume controller"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "silencer",
+
+    label:
+      "Schalldämpfer",
+
+    ifc:
+      [
+        "IFCDUCTSILENCER"
+      ],
+
+    terms:
+      [
+        "Schalldämpfer",
+        "Schalldaempfer",
+        "Duct Silencer",
+        "Silencer",
+        "Sound Attenuator"
+      ],
+
+    bsdd:
+      [
+        "duct silencer",
+        "sound attenuator"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "filter",
+
+    label:
+      "Luftfilter",
+
+    predefined:
+      [
+        "FILTER"
+      ],
+
+    terms:
+      [
+        "Luftfilter",
+        "Filterstufe",
+        "Pocket Filter",
+        "Bag Filter",
+        "HEPA"
+      ],
+
+    bsdd:
+      [
+        "air filter"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "fan",
+
+    label:
+      "Ventilator",
+
+    ifc:
+      [
+        "IFCFAN"
+      ],
+
+    terms:
+      [
+        "Ventilator",
+        "Fan",
+        "Radialventilator",
+        "Axialventilator",
+        "Dachventilator",
+        "Entrauchungsventilator"
+      ],
+
+    bsdd:
+      [
+        "fan"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "heat_recovery",
+
+    label:
+      "Wärmerückgewinnung",
+
+    terms:
+      [
+        "Wärmerückgewinnung",
+        "Waermerueckgewinnung",
+        "WRG",
+        "Rotationswärmetauscher",
+        "Heat Recovery"
+      ],
+
+    bsdd:
+      [
+        "heat recovery unit"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "coil",
+
+    label:
+      "Heiz-/Kühlregister",
+
+    terms:
+      [
+        "Heizregister",
+        "Kühlregister",
+        "Kuehlregister",
+        "Cooling Coil",
+        "Heating Coil"
+      ],
+
+    bsdd:
+      [
+        "air heating coil",
+        "air cooling coil"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "air_handling_unit",
+
+    label:
+      "RLT-Gerät / Luftbehandlungsgerät",
+
+    predefined:
+      [
+        "AIRHANDLER"
+      ],
+
+    terms:
+      [
+        "RLT Gerät",
+        "RLT-Gerät",
+        "Luftbehandlungsgerät",
+        "Air Handling Unit",
+        "AHU"
+      ],
+
+    bsdd:
+      [
+        "air handling unit"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "grille",
+
+    label:
+      "Lüftungsgitter",
+
+    terms:
+      [
+        "Lüftungsgitter",
+        "Lueftungsgitter",
+        "Luftgitter",
+        "Wetterschutzgitter",
+        "Air Grille",
+        "Grille"
+      ],
+
+    bsdd:
+      [
+        "air grille"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "disc_valve",
+
+    label:
+      "Tellerventil",
+
+    terms:
+      [
+        "Tellerventil",
+        "Disc Valve"
+      ],
+
+    bsdd:
+      [
+        "disc valve"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "air_terminal",
+
+    label:
+      "Luftauslass",
+
+    ifc:
+      [
+        "IFCAIRTERMINAL"
+      ],
+
+    terms:
+      [
+        "Luftauslass",
+        "Drallauslass",
+        "Schlitzauslass",
+        "Quellauslass",
+        "Diffuser",
+        "Air Terminal"
+      ],
+
+    bsdd:
+      [
+        "air terminal",
+        "diffuser"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "damper",
+
+    label:
+      "Lüftungsklappe",
+
+    ifc:
+      [
+        "IFCDAMPER"
+      ],
+
+    terms:
+      [
+        "Jalousieklappe",
+        "Absperrklappe",
+        "Drosselklappe",
+        "Damper",
+        "Klappe"
+      ],
+
+    bsdd:
+      [
+        "air damper"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "duct_fitting",
+
+    label:
+      "Lüftungsformteil",
+
+    ifc:
+      [
+        "IFCDUCTFITTING"
+      ],
+
+    terms:
+      [
+        "Kanalformteil",
+        "Duct Fitting",
+        "Bogen",
+        "Abzweig",
+        "T-Stück",
+        "Übergang",
+        "Reduktion",
+        "Bundkragen",
+        "Stutzen"
+      ],
+
+    bsdd:
+      [
+        "duct fitting"
+      ]
+  },
+
+
+  {
+    domain:
+      "ventilation",
+
+    type:
+      "duct_segment",
+
+    label:
+      "Lüftungskanal / Lüftungsrohr",
+
+    ifc:
+      [
+        "IFCDUCTSEGMENT"
+      ],
+
+    terms:
+      [
+        "Lüftungskanal",
+        "Luftkanal",
+        "Rechteckkanal",
+        "Lüftungsrohr",
+        "Wickelfalzrohr",
+        "Spirorohr"
+      ],
+
+    bsdd:
+      [
+        "duct segment",
+        "air duct"
+      ]
+  },
+
+
+  /* -------------------------------------------------------
+     HEIZUNG / KÄLTE / HYDRAULIK
+  ------------------------------------------------------- */
+
+  {
+    domain:
+      "cooling",
+
+    type:
+      "heat_pump",
+
+    label:
+      "Wärmepumpe",
+
+    predefined:
+      [
+        "HEATPUMP"
+      ],
+
+    terms:
+      [
+        "Wärmepumpe",
+        "Waermepumpe",
+        "Heat Pump"
+      ],
+
+    bsdd:
+      [
+        "heat pump"
+      ]
+  },
+
+
+  {
+    domain:
+      "cooling",
+
+    type:
+      "chiller",
+
+    label:
+      "Kältemaschine / Chiller",
+
+    predefined:
+      [
+        "CHILLER"
+      ],
+
+    terms:
+      [
+        "Kältemaschine",
+        "Kaeltemaschine",
+        "Chiller",
+        "Kaltwassersatz"
+      ],
+
+    bsdd:
+      [
+        "chiller"
+      ]
+  },
+
+
+  {
+    domain:
+      "heating",
+
+    type:
+      "boiler",
+
+    label:
+      "Heizkessel / Wärmeerzeuger",
+
+    predefined:
+      [
+        "BOILER"
+      ],
+
+    terms:
+      [
+        "Heizkessel",
+        "Boiler",
+        "Wärmeerzeuger"
+      ],
+
+    bsdd:
+      [
+        "boiler"
+      ]
+  },
+
+
+  {
+    domain:
+      "generic_mep",
+
+    type:
+      "heat_exchanger",
+
+    label:
+      "Wärmetauscher",
+
+    ifc:
+      [
+        "IFCHEATEXCHANGER"
+      ],
+
+    terms:
+      [
+        "Wärmetauscher",
+        "Waermetauscher",
+        "Heat Exchanger"
+      ],
+
+    bsdd:
+      [
+        "heat exchanger"
+      ]
+  },
+
+
+  {
+    domain:
+      "heating",
+
+    type:
+      "radiator",
+
+    label:
+      "Heizkörper / Wärmeabgabegerät",
+
+    terms:
+      [
+        "Heizkörper",
+        "Radiator",
+        "Konvektor",
+        "Deckenstrahlplatte"
+      ],
+
+    bsdd:
+      [
+        "radiator"
+      ]
+  },
+
+
+  {
+    domain:
+      "generic_mep",
+
+    type:
+      "pump",
+
+    label:
+      "Pumpe",
+
+    ifc:
+      [
+        "IFCPUMP"
+      ],
+
+    terms:
+      [
+        "Pumpe",
+        "Pump",
+        "Umwälzpumpe",
+        "Zirkulationspumpe"
+      ],
+
+    bsdd:
+      [
+        "pump"
+      ]
+  },
+
+
+  {
+    domain:
+      "generic_mep",
+
+    type:
+      "valve",
+
+    label:
+      "Armatur / Ventil",
+
+    ifc:
+      [
+        "IFCVALVE"
+      ],
+
+    terms:
+      [
+        "Ventil",
+        "Valve",
+        "Absperrventil",
+        "Regelventil",
+        "Kugelhahn",
+        "Schieber",
+        "Rückschlagventil"
+      ],
+
+    bsdd:
+      [
+        "valve"
+      ]
+  },
+
+
+  {
+    domain:
+      "generic_mep",
+
+    type:
+      "tank",
+
+    label:
+      "Behälter / Speicher",
+
+    ifc:
+      [
+        "IFCTANK"
+      ],
+
+    terms:
+      [
+        "Pufferspeicher",
+        "Speicher",
+        "Tank",
+        "Behälter",
+        "Ausdehnungsgefäß"
+      ],
+
+    bsdd:
+      [
+        "tank",
+        "storage vessel"
+      ]
+  },
+
+
+  {
+    domain:
+      "generic_mep",
+
+    type:
+      "pipe_fitting",
+
+    label:
+      "Rohrformteil",
+
+    ifc:
+      [
+        "IFCPIPEFITTING"
+      ],
+
+    terms:
+      [
+        "Rohrformteil",
+        "Pipe Fitting",
+        "Rohrbogen",
+        "Rohrabzweig"
+      ],
+
+    bsdd:
+      [
+        "pipe fitting"
+      ]
+  },
+
+
+  {
+    domain:
+      "generic_mep",
+
+    type:
+      "pipe_segment",
+
+    label:
+      "Rohrleitung",
+
+    ifc:
+      [
+        "IFCPIPESEGMENT"
+      ],
+
+    terms:
+      [
+        "Rohrleitung",
+        "Pipe Segment"
+      ],
+
+    bsdd:
+      [
+        "pipe segment"
+      ]
+  },
+
+
+  /* -------------------------------------------------------
+     SANITÄR
+  ------------------------------------------------------- */
+
+  {
+    domain:
+      "plumbing",
+
+    type:
+      "water_heater",
+
+    label:
+      "Trinkwassererwärmer",
+
+    terms:
+      [
+        "Trinkwassererwärmer",
+        "Warmwasserbereiter",
+        "Water Heater",
+        "Durchlauferhitzer"
+      ],
+
+    bsdd:
+      [
+        "water heater"
+      ]
+  },
+
+
+  {
+    domain:
+      "plumbing",
+
+    type:
+      "sanitary_terminal",
+
+    label:
+      "Sanitärobjekt",
+
+    ifc:
+      [
+        "IFCSANITARYTERMINAL"
+      ],
+
+    terms:
+      [
+        "Waschtisch",
+        "Urinal",
+        "Dusche",
+        "Badewanne",
+        "Spüle",
+        "Sanitary Terminal"
+      ],
+
+    bsdd:
+      [
+        "sanitary terminal",
+        "sanitary appliance"
+      ]
+  },
+
+
+  {
+    domain:
+      "plumbing",
+
+    type:
+      "waste_terminal",
+
+    label:
+      "Entwässerungsablauf",
+
+    ifc:
+      [
+        "IFCWASTETERMINAL"
+      ],
+
+    terms:
+      [
+        "Bodenablauf",
+        "Dachablauf",
+        "Gully",
+        "Waste Terminal"
+      ],
+
+    bsdd:
+      [
+        "waste terminal",
+        "floor drain"
+      ]
+  },
+
+
+  {
+    domain:
+      "plumbing",
+
+    type:
+      "interceptor",
+
+    label:
+      "Abscheider",
+
+    ifc:
+      [
+        "IFCINTERCEPTOR"
+      ],
+
+    terms:
+      [
+        "Fettabscheider",
+        "Ölabscheider",
+        "Interceptor"
+      ],
+
+    bsdd:
+      [
+        "interceptor",
+        "separator"
+      ]
+  },
+
+
+  /* -------------------------------------------------------
+     MSR / GEBÄUDEAUTOMATION
+  ------------------------------------------------------- */
+
+  {
+    domain:
+      "automation",
+
+    type:
+      "sensor",
+
+    label:
+      "Sensor / Messfühler",
+
+    ifc:
+      [
+        "IFCSENSOR"
+      ],
+
+    terms:
+      [
+        "Sensor",
+        "Fühler",
+        "Temperaturfühler",
+        "Druckfühler",
+        "Feuchtefühler",
+        "CO2 Sensor"
+      ],
+
+    bsdd:
+      [
+        "sensor"
+      ]
+  },
+
+
+  {
+    domain:
+      "automation",
+
+    type:
+      "actuator",
+
+    label:
+      "Stellantrieb / Aktor",
+
+    ifc:
+      [
+        "IFCACTUATOR"
+      ],
+
+    terms:
+      [
+        "Stellantrieb",
+        "Aktor",
+        "Actuator",
+        "Klappenantrieb",
+        "Ventilantrieb"
+      ],
+
+    bsdd:
+      [
+        "actuator"
+      ]
+  },
+
+
+  {
+    domain:
+      "automation",
+
+    type:
+      "controller",
+
+    label:
+      "Regler / Controller",
+
+    ifc:
+      [
+        "IFCCONTROLLER"
+      ],
+
+    terms:
+      [
+        "Regler",
+        "Controller",
+        "DDC",
+        "Automationsstation"
+      ],
+
+    bsdd:
+      [
+        "controller"
+      ]
+  },
+
+
+  {
+    domain:
+      "automation",
+
+    type:
+      "meter",
+
+    label:
+      "Messgerät / Zähler",
+
+    ifc:
+      [
+        "IFCFLOWMETER"
+      ],
+
+    terms:
+      [
+        "Zähler",
+        "Meter",
+        "Wärmemengenzähler",
+        "Wasserzähler"
+      ],
+
+    bsdd:
+      [
+        "flow meter",
+        "meter"
+      ]
+  },
+
+
+  /* -------------------------------------------------------
+     ELEKTRO
+  ------------------------------------------------------- */
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "distribution_board",
+
+    label:
+      "Elektroverteilung",
+
+    ifc:
+      [
+        "IFCELECTRICDISTRIBUTIONBOARD"
+      ],
+
+    terms:
+      [
+        "Unterverteilung",
+        "Hauptverteilung",
+        "Schaltschrank",
+        "Distribution Board"
+      ],
+
+    bsdd:
+      [
+        "distribution board"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "protective_device",
+
+    label:
+      "Schutzgerät",
+
+    ifc:
+      [
+        "IFCPROTECTIVEDEVICE"
+      ],
+
+    terms:
+      [
+        "Leitungsschutzschalter",
+        "FI-Schalter",
+        "RCD",
+        "Protective Device"
+      ],
+
+    bsdd:
+      [
+        "protective device"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "switching_device",
+
+    label:
+      "Schaltgerät",
+
+    ifc:
+      [
+        "IFCSWITCHINGDEVICE"
+      ],
+
+    terms:
+      [
+        "Schalter",
+        "Schütz",
+        "Switching Device"
+      ],
+
+    bsdd:
+      [
+        "switching device"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "outlet",
+
+    label:
+      "Steckdose / Anschluss",
+
+    ifc:
+      [
+        "IFCOUTLET"
+      ],
+
+    terms:
+      [
+        "Steckdose",
+        "Outlet"
+      ],
+
+    bsdd:
+      [
+        "electrical outlet"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "light_fixture",
+
+    label:
+      "Leuchte",
+
+    ifc:
+      [
+        "IFCLIGHTFIXTURE"
+      ],
+
+    terms:
+      [
+        "Leuchte",
+        "Light Fixture",
+        "Luminaire"
+      ],
+
+    bsdd:
+      [
+        "light fixture",
+        "luminaire"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "transformer",
+
+    label:
+      "Transformator",
+
+    ifc:
+      [
+        "IFCTRANSFORMER"
+      ],
+
+    terms:
+      [
+        "Transformator",
+        "Transformer"
+      ],
+
+    bsdd:
+      [
+        "transformer"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "electric_motor",
+
+    label:
+      "Elektromotor",
+
+    ifc:
+      [
+        "IFCELECTRICMOTOR"
+      ],
+
+    terms:
+      [
+        "Elektromotor",
+        "Electric Motor"
+      ],
+
+    bsdd:
+      [
+        "electric motor"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "communications_appliance",
+
+    label:
+      "Kommunikationsgerät",
+
+    ifc:
+      [
+        "IFCCOMMUNICATIONSAPPLIANCE"
+      ],
+
+    terms:
+      [
+        "Kommunikationsgerät",
+        "Communications Appliance"
+      ],
+
+    bsdd:
+      [
+        "communications appliance"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "cable_carrier",
+
+    label:
+      "Kabeltrasse / Kabeltragsystem",
+
+    ifc:
+      [
+        "IFCCABLECARRIERSEGMENT",
+        "IFCCABLECARRIERFITTING"
+      ],
+
+    terms:
+      [
+        "Kabeltrasse",
+        "Kabelrinne",
+        "Kabelleiter",
+        "Cable Carrier",
+        "Cable Tray"
+      ],
+
+    bsdd:
+      [
+        "cable tray",
+        "cable carrier"
+      ]
+  },
+
+
+  {
+    domain:
+      "electrical",
+
+    type:
+      "cable_segment",
+
+    label:
+      "Kabel / Leitung",
+
+    ifc:
+      [
+        "IFCCABLESEGMENT"
+      ],
+
+    terms:
+      [
+        "Kabel",
+        "Cable Segment"
+      ],
+
+    bsdd:
+      [
+        "cable segment"
+      ]
+  },
+
+
+  /* -------------------------------------------------------
+     DÄMMUNG
+  ------------------------------------------------------- */
+
+  {
+    domain:
+      "generic_mep",
+
+    type:
+      "insulation",
+
+    label:
+      "Dämmung / Isolierung",
+
+    ifc:
+      [
+        "IFCCOVERING"
+      ],
+
+    terms:
+      [
+        "Dämmung",
+        "Daemmung",
+        "Isolierung",
+        "Insulation",
+        "Armaflex",
+        "Kaiflex",
+        "K-Flex"
+      ],
+
+    bsdd:
+      [
+        "insulation"
+      ]
+  }
+];
+
+
+/* =========================================================
+   KLASSIFIZIERUNG
+========================================================= */
+
+function classify(
   flat:
     Record<
       string,
@@ -698,20 +2202,381 @@ function parseDimensions(
     >
 ): {
 
-  shape?:
-    "rectangular" |
-    "round";
+  domain:
+    TgaDomain;
 
-  widthMm?:
-    number;
+  type:
+    TgaComponentType;
 
-  heightMm?:
-    number;
+  label:
+    string;
 
-  diameterMm?:
-    number;
+  confidence:
+    "high" |
+    "medium" |
+    "low";
+
+  matchedBy:
+    string[];
+
+  bsdd:
+    string[];
 
 } {
+
+  const ifc =
+    norm(
+      txt(
+        flat,
+        [
+          "class",
+          "Common Type",
+          "CommonType",
+          "IfcType",
+          "EntityType"
+        ]
+      )
+    );
+
+
+  const predefined =
+    norm(
+      txt(
+        flat,
+        [
+          "PredefinedType",
+          "Predefined Type"
+        ]
+      )
+    );
+
+
+  const layer =
+    norm(
+      txt(
+        flat,
+        [
+          "Layer",
+          "Presentation Layer",
+          "PresentationLayer"
+        ]
+      )
+    );
+
+
+  const everything =
+    blob(
+      flat
+    );
+
+
+  for (
+    const rule
+    of RULES
+  ) {
+
+    const hitIfc =
+      any(
+        ifc,
+        rule.ifc
+      );
+
+
+    const hitPredefined =
+      any(
+        predefined,
+        rule.predefined
+      );
+
+
+    const hitLayer =
+      any(
+        layer,
+        rule.layer
+      );
+
+
+    const hitTerms =
+      any(
+        everything,
+        rule.terms
+      );
+
+
+    if (
+      hitIfc ||
+      hitPredefined ||
+      hitLayer ||
+      hitTerms
+    ) {
+
+      const matchedBy:
+        string[] = [];
+
+
+      if (
+        hitIfc
+      ) {
+
+        matchedBy.push(
+          "IFC-Klasse"
+        );
+      }
+
+
+      if (
+        hitPredefined
+      ) {
+
+        matchedBy.push(
+          "PredefinedType"
+        );
+      }
+
+
+      if (
+        hitLayer
+      ) {
+
+        matchedBy.push(
+          "Layer"
+        );
+      }
+
+
+      if (
+        hitTerms
+      ) {
+
+        matchedBy.push(
+          "Produkt-/Property-Daten"
+        );
+      }
+
+
+      return {
+
+        domain:
+          rule.domain,
+
+        type:
+          rule.type,
+
+        label:
+          rule.label,
+
+        confidence:
+          (
+            hitIfc ||
+            hitPredefined ||
+            hitLayer
+          )
+            ? "high"
+            : "medium",
+
+        matchedBy,
+
+        bsdd:
+          rule.bsdd ||
+          []
+      };
+    }
+  }
+
+
+  /*
+   * Generische IFC-Fallbacks
+   */
+
+  if (
+    ifc.includes(
+      "flowcontroller"
+    )
+  ) {
+
+    return {
+
+      domain:
+        "generic_mep",
+
+      type:
+        "flow_controller_generic",
+
+      label:
+        "Strömungs-/Regelbauteil",
+
+      confidence:
+        "low",
+
+      matchedBy:
+        [
+          "IFCFlowController"
+        ],
+
+      bsdd:
+        []
+    };
+  }
+
+
+  if (
+    ifc.includes(
+      "flowterminal"
+    )
+  ) {
+
+    return {
+
+      domain:
+        "generic_mep",
+
+      type:
+        "flow_terminal_generic",
+
+      label:
+        "TGA-Endgerät",
+
+      confidence:
+        "low",
+
+      matchedBy:
+        [
+          "IfcFlowTerminal"
+        ],
+
+      bsdd:
+        []
+    };
+  }
+
+
+  if (
+    ifc.includes(
+      "flowmovingdevice"
+    )
+  ) {
+
+    return {
+
+      domain:
+        "generic_mep",
+
+      type:
+        "flow_moving_device_generic",
+
+      label:
+        "Förder-/Strömungsmaschine",
+
+      confidence:
+        "low",
+
+      matchedBy:
+        [
+          "IfcFlowMovingDevice"
+        ],
+
+      bsdd:
+        []
+    };
+  }
+
+
+  if (
+    ifc.includes(
+      "flowtreatmentdevice"
+    )
+  ) {
+
+    return {
+
+      domain:
+        "generic_mep",
+
+      type:
+        "flow_treatment_device_generic",
+
+      label:
+        "TGA-Behandlungsbauteil",
+
+      confidence:
+        "low",
+
+      matchedBy:
+        [
+          "IfcFlowTreatmentDevice"
+        ],
+
+      bsdd:
+        []
+    };
+  }
+
+
+  if (
+    ifc.includes(
+      "energyconversiondevice"
+    )
+  ) {
+
+    return {
+
+      domain:
+        "generic_mep",
+
+      type:
+        "energy_conversion_device_generic",
+
+      label:
+        "Energieumwandlungsgerät",
+
+      confidence:
+        "low",
+
+      matchedBy:
+        [
+          "IfcEnergyConversionDevice"
+        ],
+
+      bsdd:
+        []
+    };
+  }
+
+
+  return {
+
+    domain:
+      "unknown",
+
+    type:
+      "unknown",
+
+    label:
+      "Nicht eindeutig erkannt",
+
+    confidence:
+      "low",
+
+    matchedBy:
+      [],
+
+    bsdd:
+      []
+  };
+}
+
+
+/* =========================================================
+   ABMESSUNGEN
+========================================================= */
+
+function dimensions(
+  flat:
+    Record<
+      string,
+      unknown
+    >
+) {
 
   let widthMm =
     num(
@@ -758,7 +2623,7 @@ function parseDimensions(
 
 
   const raw =
-    text(
+    txt(
       flat,
       [
         "ConnectionSize_mm",
@@ -779,7 +2644,7 @@ function parseDimensions(
 
   if (raw) {
 
-    const size =
+    const text =
       raw
         .replace(
           ",",
@@ -796,7 +2661,7 @@ function parseDimensions(
 
 
     const round =
-      size.match(
+      text.match(
         /(?:ø|⌀|dn\s*)\s*(\d+(?:\.\d+)?)/i
       );
 
@@ -814,13 +2679,15 @@ function parseDimensions(
     }
 
 
-    const rect =
-      size.match(
+    const rectangle =
+      text.match(
         /(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/i
       );
 
 
-    if (rect) {
+    if (
+      rectangle
+    ) {
 
       if (
         widthMm ===
@@ -829,7 +2696,7 @@ function parseDimensions(
 
         widthMm =
           Number(
-            rect[1]
+            rectangle[1]
           );
       }
 
@@ -841,7 +2708,7 @@ function parseDimensions(
 
         heightMm =
           Number(
-            rect[2]
+            rectangle[2]
           );
       }
     }
@@ -851,6 +2718,7 @@ function parseDimensions(
   if (
     widthMm !==
       undefined &&
+
     heightMm !==
       undefined
   ) {
@@ -858,7 +2726,7 @@ function parseDimensions(
     return {
 
       shape:
-        "rectangular",
+        "rectangular" as const,
 
       widthMm,
 
@@ -875,7 +2743,7 @@ function parseDimensions(
     return {
 
       shape:
-        "round",
+        "round" as const,
 
       diameterMm
     };
@@ -894,583 +2762,64 @@ function parseDimensions(
 
 
 /* =========================================================
-   CLASSIFICATION
+   VDI 3805 BEREICH
 ========================================================= */
 
-function classify(
-  flat:
-    Record<
-      string,
-      unknown
-    >
-) {
+function vdiScope(
+  domain:
+    TgaDomain
+): string | undefined {
 
-  const ifcType =
-    n(
-      text(
-        flat,
-        [
-          "class",
-          "Common Type",
-          "CommonType",
-          "IfcType",
-          "EntityType"
-        ]
-      )
-    );
+  const map:
+    Partial<
+      Record<
+        TgaDomain,
+        string
+      >
+    > = {
 
+    ventilation:
+      "VDI 3805 – Raumlufttechnik",
 
-  const predefined =
-    n(
-      text(
-        flat,
-        [
-          "PredefinedType"
-        ]
-      )
-    );
+    heating:
+      "VDI 3805 – Heiztechnik",
 
+    cooling:
+      "VDI 3805 – Kälte-/Wärmepumpentechnik",
 
-  const layer =
-    n(
-      text(
-        flat,
-        [
-          "Layer",
-          "Presentation Layer",
-          "PresentationLayer"
-        ]
-      )
-    );
+    plumbing:
+      "VDI 3805 – Sanitärtechnik",
 
+    automation:
+      "VDI 3805 – Gebäudeautomation",
 
-  const name =
-    n(
-      text(
-        flat,
-        [
-          "Product Name",
-          "ProductName",
-          "Name"
-        ]
-      )
-    );
+    electrical:
+      "VDI 3805 – Elektrotechnik"
+  };
 
 
-  const description =
-    n(
-      text(
-        flat,
-        [
-          "Product Description",
-          "Description"
-        ]
-      )
-    );
-
-
-  const objectType =
-    n(
-      text(
-        flat,
-        [
-          "Product Object Type",
-          "ObjectType"
-        ]
-      )
-    );
-
-
-  const manufacturer =
-    n(
-      text(
-        flat,
-        [
-          "Fabrikat",
-          "Manufacturer",
-          "Hersteller",
-          "Manufacturer Name",
-          "Product Manufacturer"
-        ]
-      )
-    );
-
-
-  const everything =
-    [
-      allText(
-        flat
-      ),
-      layer,
-      name,
-      description,
-      objectType,
-      manufacturer
-    ]
-      .join(
-        " "
-      );
-
-
-  const result =
-    (
-      type:
-        TgaComponentType,
-
-      label:
-        string,
-
-      reason:
-        string,
-
-      confidence:
-        "high" |
-        "medium" |
-        "low" =
-          "high"
-    ) => ({
-
-      type,
-
-      label,
-
-      confidence,
-
-      matchedBy:
-        [
-          reason
-        ]
-    });
-
-
-  /* =====================================================
-     BSK
-  ===================================================== */
-
-  if (
-    has(
-      layer,
-      [
-        "L_BSK",
-        "BSK",
-        "Brandschutz"
-      ]
-    )
-    ||
-    has(
-      everything,
-      [
-        "Brandschutzklappe",
-        "Brandschutz Klappe",
-        "Brandklappe",
-        "Fire Damper",
-        "Fire Smoke Damper",
-        "Firedamper",
-        "FK2-EU",
-        "FK2 EU",
-        "FK-EU",
-        "FKRS-EU",
-        "FKRS EU",
-        "FK90",
-        "FR90"
-      ]
-    )
-    ||
-    predefined.includes(
-      "firedamper"
-    )
-  ) {
-
-    return result(
-      "fire_damper",
-      "Brandschutzklappe (BSK)",
-      layer.includes(
-        "bsk"
-      )
-        ? "Layer als BSK erkannt"
-        : "Produktdaten als Brandschutzklappe erkannt",
-      "high"
-    );
-  }
-
-
-  /* =====================================================
-     VSR
-  ===================================================== */
-
-  if (
-    has(
-      layer,
-      [
-        "L_VSR",
-        "VSR",
-        "Volumenstromregler"
-      ]
-    )
-    ||
-    has(
-      everything,
-      [
-        "Volumenstromregler",
-        "Volumenstrom Regler",
-        "Volumenstrombegrenzer",
-        "Luftmengenregler",
-        "Volume Flow Controller",
-        "Air Volume Controller",
-        "VARYCONTROL",
-        "VAV",
-        "CAV",
-        "TVR",
-        "TVJ",
-        "TVZ",
-        "TVE",
-        "VFC"
-      ]
-    )
-  ) {
-
-    return result(
-      "volume_flow_controller",
-      "Volumenstromregler (VSR)",
-      layer.includes(
-        "vsr"
-      )
-        ? "Layer als VSR erkannt"
-        : "Produktdaten als VSR erkannt",
-      "high"
-    );
-  }
-
-
-  /* =====================================================
-     SCHALLDÄMPFER
-  ===================================================== */
-
-  if (
-    has(
-      layer,
-      [
-        "L_Schalldaempfer",
-        "Schalldaempfer",
-        "Silencer"
-      ]
-    )
-    ||
-    has(
-      everything,
-      [
-        "Schalldämpfer",
-        "Schalldaempfer",
-        "Kulissenschalldämpfer",
-        "Kulissenschalldaempfer",
-        "Rohrschalldämpfer",
-        "Rohrschalldaempfer",
-        "Silencer",
-        "Sound Attenuator"
-      ]
-    )
-  ) {
-
-    return result(
-      "silencer",
-      "Schalldämpfer",
-      "Schalldämpfer erkannt"
-    );
-  }
-
-
-  /* Tellerventil */
-
-  if (
-    has(
-      everything,
-      [
-        "Tellerventil",
-        "Disc Valve"
-      ]
-    )
-  ) {
-
-    return result(
-      "disc_valve",
-      "Tellerventil",
-      "Tellerventil erkannt"
-    );
-  }
-
-
-  /* Gitter */
-
-  if (
-    has(
-      layer,
-      [
-        "L_Gitter",
-        "Gitter"
-      ]
-    )
-    ||
-    has(
-      everything,
-      [
-        "Lüftungsgitter",
-        "Lueftungsgitter",
-        "Luftgitter",
-        "Wetterschutzgitter",
-        "Schutzgitter",
-        "Air Grille",
-        "Grille"
-      ]
-    )
-  ) {
-
-    return result(
-      "grille",
-      "Lüftungsgitter",
-      "Gitter erkannt"
-    );
-  }
-
-
-  /* Jalousieklappe */
-
-  if (
-    has(
-      layer,
-      [
-        "L_Jalousieklappe",
-        "Jalousieklappe"
-      ]
-    )
-    ||
-    has(
-      everything,
-      [
-        "Jalousieklappe",
-        "Louver Damper",
-        "Louvre Damper"
-      ]
-    )
-  ) {
-
-    return result(
-      "louver_damper",
-      "Jalousieklappe",
-      "Jalousieklappe erkannt"
-    );
-  }
-
-
-  /* Absperrklappe */
-
-  if (
-    has(
-      everything,
-      [
-        "Absperrklappe",
-        "Shutoff Damper",
-        "Shut Off Damper",
-        "Drosselklappe"
-      ]
-    )
-  ) {
-
-    return result(
-      "shutoff_damper",
-      "Absperrklappe",
-      "Absperrklappe erkannt"
-    );
-  }
-
-
-  /* Dämmung */
-
-  if (
-    ifcType.includes(
-      "covering"
-    )
-    ||
-    has(
-      layer,
-      [
-        "L_Daemmung",
-        "L_Isolierung"
-      ]
-    )
-    ||
-    has(
-      everything,
-      [
-        "Dämmung",
-        "Daemmung",
-        "Isolierung",
-        "Insulation",
-        "Armaflex",
-        "Kaiflex",
-        "K-Flex"
-      ]
-    )
-  ) {
-
-    return result(
-      "insulation",
-      "Lüftungsdämmung / Isolierung",
-      "Dämmung erkannt"
-    );
-  }
-
-
-  /* Luftauslass */
-
-  if (
-    ifcType.includes(
-      "airterminal"
-    )
-    ||
-    has(
-      everything,
-      [
-        "Luftauslass",
-        "Drallauslass",
-        "Schlitzauslass",
-        "Deckenauslass",
-        "Quellauslass",
-        "Diffuser",
-        "Air Terminal"
-      ]
-    )
-  ) {
-
-    return result(
-      "air_terminal",
-      "Luftauslass",
-      "Luftauslass erkannt"
-    );
-  }
-
-
-  /* Formteil */
-
-  if (
-    ifcType.includes(
-      "ductfitting"
-    )
-    ||
-    has(
-      everything,
-      [
-        "Kanalformteil",
-        "Duct Fitting",
-        "Bogen",
-        "Abzweig",
-        "T-Stück",
-        "T Stueck",
-        "Übergang",
-        "Uebergang",
-        "Reduktion",
-        "Transition",
-        "Junction",
-        "Elbow",
-        "Bundkragen",
-        "Hosenstück",
-        "Stutzen"
-      ]
-    )
-  ) {
-
-    return result(
-      "duct_fitting",
-      "Lüftungsformteil",
-      "Formteil erkannt"
-    );
-  }
-
-
-  /* Kanal / Rohr */
-
-  if (
-    ifcType.includes(
-      "ductsegment"
-    )
-    ||
-    has(
-      everything,
-      [
-        "Lüftungskanal",
-        "Lueftungskanal",
-        "Luftkanal",
-        "Rechteckkanal",
-        "Lüftungsrohr",
-        "Lueftungsrohr",
-        "Wickelfalzrohr",
-        "Spirorohr",
-        "Duct Segment"
-      ]
-    )
-  ) {
-
-    return result(
-      "duct_segment",
-      "Lüftungskanal / Lüftungsrohr",
-      "Kanal / Rohr erkannt"
-    );
-  }
-
-
-  /* Allgemeine Klappe */
-
-  if (
-    has(
-      everything,
-      [
-        "Klappe",
-        "Damper"
-      ]
-    )
-  ) {
-
-    return result(
-      "damper_generic",
-      "Lüftungsklappe",
-      "allgemeine Klappe erkannt",
-      "medium"
-    );
-  }
-
-
-  /* IFCFLOWCONTROLLER Fallback */
-
-  if (
-    ifcType.includes(
-      "flowcontroller"
-    )
-  ) {
-
-    return result(
-      "flow_controller_generic",
-      "Luftstrom-Regelbauteil",
-      "IFCFLOWCONTROLLER – Untertyp in übertragenen Daten nicht eindeutig",
-      "low"
-    );
-  }
-
-
-  return result(
-    "unknown",
-    "Nicht eindeutig erkannt",
-    "Keine eindeutige Klassifizierung",
-    "low"
-  );
+  return map[
+    domain
+  ];
 }
 
 
 /* =========================================================
-   OBJECT ANALYSIS
+   LOKALE ANALYSE
 ========================================================= */
 
-export function analyzeTgaObject(
-  input: unknown
-): TgaAnalysis {
+function analyzeLocal(
+  input:
+    unknown
+): {
+
+  analysis:
+    TgaAnalysis;
+
+  bsddTerms:
+    string[];
+
+} {
 
   const flat =
     flatten(
@@ -1484,14 +2833,14 @@ export function analyzeTgaObject(
     );
 
 
-  const dimensions =
-    parseDimensions(
+  const dimension =
+    dimensions(
       flat
     );
 
 
   const ifcType =
-    text(
+    txt(
       flat,
       [
         "class",
@@ -1504,23 +2853,25 @@ export function analyzeTgaObject(
 
 
   const predefinedType =
-    text(
+    txt(
       flat,
       [
-        "PredefinedType"
+        "PredefinedType",
+        "Predefined Type"
       ]
     );
 
 
   const guid =
-    text(
+    txt(
       flat,
       [
         "GUID (IFC)",
         "GUID IFC",
         "externalId",
         "GlobalId",
-        "IfcGuid"
+        "IfcGuid",
+        "GUID"
       ]
     );
 
@@ -1536,7 +2887,7 @@ export function analyzeTgaObject(
 
 
   const name =
-    text(
+    txt(
       flat,
       [
         "Product Name",
@@ -1547,7 +2898,7 @@ export function analyzeTgaObject(
 
 
   const description =
-    text(
+    txt(
       flat,
       [
         "Product Description",
@@ -1557,7 +2908,7 @@ export function analyzeTgaObject(
 
 
   const objectType =
-    text(
+    txt(
       flat,
       [
         "Product Object Type",
@@ -1567,7 +2918,7 @@ export function analyzeTgaObject(
 
 
   const manufacturer =
-    text(
+    txt(
       flat,
       [
         "Fabrikat",
@@ -1580,7 +2931,7 @@ export function analyzeTgaObject(
 
 
   const productType =
-    text(
+    txt(
       flat,
       [
         "Product Type",
@@ -1591,19 +2942,8 @@ export function analyzeTgaObject(
     );
 
 
-  const layer =
-    text(
-      flat,
-      [
-        "Layer",
-        "Presentation Layer",
-        "PresentationLayer"
-      ]
-    );
-
-
   const tag =
-    text(
+    txt(
       flat,
       [
         "Tag",
@@ -1613,8 +2953,19 @@ export function analyzeTgaObject(
     );
 
 
+  const layer =
+    txt(
+      flat,
+      [
+        "Layer",
+        "Presentation Layer",
+        "PresentationLayer"
+      ]
+    );
+
+
   const modelName =
-    text(
+    txt(
       flat,
       [
         "modelName",
@@ -1625,7 +2976,7 @@ export function analyzeTgaObject(
 
 
   const system =
-    text(
+    txt(
       flat,
       [
         "Tech-Medium",
@@ -1634,6 +2985,7 @@ export function analyzeTgaObject(
         "SystemName",
         "System Name",
         "DistributionSystem",
+        "SystemClassification",
         "Anlage",
         "Anlagenkennzeichen",
         "MagiCADSystem"
@@ -1642,21 +2994,24 @@ export function analyzeTgaObject(
 
 
   const storey =
-    text(
+    txt(
       flat,
       [
         "Storey",
         "BuildingStorey",
+        "Building Storey",
         "Geschoss",
         "Etage",
         "Floor",
         "Level",
-        "ReferenceLevel"
+        "ReferenceLevel",
+        "Reference Level"
       ]
     );
 
 
   const lengthMm =
+
     num(
       flat,
       [
@@ -1666,10 +3021,13 @@ export function analyzeTgaObject(
         "Length mm",
         "Laenge_mm",
         "Länge_mm",
-        "DuctLength_mm"
+        "DuctLength_mm",
+        "PipeLength_mm"
       ]
     )
+
     ??
+
     num(
       flat,
       [
@@ -1687,6 +3045,7 @@ export function analyzeTgaObject(
         "Insulation_thickness_mm",
         "InsulationThickness",
         "Insulation Thickness",
+        "Insulation_mm",
         "Daemmstaerke",
         "Dämmstärke",
         "Daemmung_mm",
@@ -1729,6 +3088,7 @@ export function analyzeTgaObject(
   if (
     airflowLs !==
       undefined &&
+
     airflowM3h ===
       undefined
   ) {
@@ -1742,6 +3102,7 @@ export function analyzeTgaObject(
   if (
     airflowM3h !==
       undefined &&
+
     airflowLs ===
       undefined
   ) {
@@ -1782,82 +3143,71 @@ export function analyzeTgaObject(
 
 
   if (
-    dimensions.shape ===
+    dimension.shape ===
       "rectangular" &&
-    dimensions.widthMm !==
+
+    dimension.widthMm !==
       undefined &&
-    dimensions.heightMm !==
+
+    dimension.heightMm !==
       undefined
   ) {
 
     areaM2 =
 
       (
-        dimensions.widthMm /
+        dimension.widthMm /
         1000
       )
 
       *
 
       (
-        dimensions.heightMm /
+        dimension.heightMm /
         1000
       );
   }
 
 
   if (
-    dimensions.shape ===
+    dimension.shape ===
       "round" &&
-    dimensions.diameterMm !==
+
+    dimension.diameterMm !==
       undefined
   ) {
 
-    const d =
-      dimensions.diameterMm /
+    const diameter =
+      dimension.diameterMm /
       1000;
 
 
     areaM2 =
 
       Math.PI
-
       *
-
-      d
-
+      diameter
       *
-
-      d
-
+      diameter
       /
-
       4;
   }
 
 
-  let velocityMs:
-    number |
-    undefined;
+  const velocityMs =
 
+    areaM2 &&
+    airflowLs !==
+      undefined
 
-  if (
-    areaM2 !== undefined &&
-    areaM2 > 0 &&
-    airflowLs !== undefined
-  ) {
+      ? (
+          airflowLs /
+          1000
+        )
+        /
+        areaM2
 
-    velocityMs =
-
-      (
-        airflowLs /
-        1000
-      )
-
-      /
-
-      areaM2;
-  }
+      : undefined;
 
 
   let quantityUnit:
@@ -1877,134 +3227,117 @@ export function analyzeTgaObject(
     undefined;
 
 
-  switch (
-    classification.type
+  if (
+    classification.type ===
+      "duct_segment"
   ) {
 
-    case "duct_segment":
+    if (
+      dimension.shape ===
+        "rectangular" &&
 
-      if (
-        dimensions.shape ===
-          "rectangular" &&
-        lengthMm !==
-          undefined &&
-        dimensions.widthMm !==
-          undefined &&
-        dimensions.heightMm !==
-          undefined
-      ) {
+      lengthMm !==
+        undefined &&
 
-        quantityUnit =
-          "m²";
+      dimension.widthMm !==
+        undefined &&
 
-
-        quantity =
-
-          2
-
-          *
-
-          (
-            dimensions.widthMm /
-            1000
-
-            +
-
-            dimensions.heightMm /
-            1000
-          )
-
-          *
-
-          (
-            lengthMm /
-            1000
-          );
-
-
-        quantityNote =
-          "Rechteckkanal: äußere Oberfläche 2 × (B + H) × L.";
-      }
-
-
-      else if (
-        dimensions.shape ===
-          "round" &&
-        lengthMm !==
-          undefined
-      ) {
-
-        quantityUnit =
-          "m";
-
-
-        quantity =
-          lengthMm /
-          1000;
-
-
-        quantityNote =
-          "Rundrohr: Abrechnung nach Länge.";
-      }
-
-      break;
-
-
-    case "duct_fitting":
-
-      if (
-        dimensions.shape ===
-          "round"
-      ) {
-
-        quantityUnit =
-          "St.";
-
-
-        quantity =
-          1;
-
-
-        quantityNote =
-          "Rund-Rohrformteil: Stück.";
-      }
-
-
-      else {
-
-        quantityUnit =
-          "m²";
-
-
-        quantityNote =
-          "Rechteck-Kanalformteil: Abrechnung nach äußerer Oberfläche.";
-      }
-
-      break;
-
-
-    case "insulation":
+      dimension.heightMm !==
+        undefined
+    ) {
 
       quantityUnit =
         "m²";
 
 
+      quantity =
+
+        2
+
+        *
+
+        (
+          dimension.widthMm /
+          1000
+
+          +
+
+          dimension.heightMm /
+          1000
+        )
+
+        *
+
+        (
+          lengthMm /
+          1000
+        );
+
+
       quantityNote =
-        "Dämmung / Isolierung: Abrechnung in m².";
+        "Rechteckkanal: äußere Oberfläche 2 × (B + H) × L.";
+    }
 
-      break;
+    else if (
+      dimension.shape ===
+        "round" &&
+
+      lengthMm !==
+        undefined
+    ) {
+
+      quantityUnit =
+        "m";
 
 
-    case "fire_damper":
-    case "volume_flow_controller":
-    case "flow_controller_generic":
-    case "grille":
-    case "disc_valve":
-    case "air_terminal":
-    case "silencer":
-    case "louver_damper":
-    case "shutoff_damper":
-    case "damper_generic":
+      quantity =
+        lengthMm /
+        1000;
+
+
+      quantityNote =
+        "Rundrohr: Abrechnung nach Länge.";
+    }
+  }
+
+
+  else if (
+    classification.type ===
+      "pipe_segment" ||
+
+    classification.type ===
+      "cable_segment"
+  ) {
+
+    if (
+      lengthMm !==
+        undefined
+    ) {
+
+      quantityUnit =
+        "m";
+
+
+      quantity =
+        lengthMm /
+        1000;
+
+
+      quantityNote =
+        "Linienbauteil: Länge.";
+    }
+  }
+
+
+  else if (
+    classification.type ===
+      "duct_fitting"
+  ) {
+
+    if (
+      dimension.shape ===
+        "round"
+    ) {
 
       quantityUnit =
         "St.";
@@ -2015,94 +3348,869 @@ export function analyzeTgaObject(
 
 
       quantityNote =
-        "Bauteil: Stück.";
+        "Rund-Rohrformteil: Stück.";
+    }
 
-      break;
+    else {
+
+      quantityUnit =
+        "m²";
+
+
+      quantityNote =
+        "Rechteck-Kanalformteil: äußere Oberfläche; exakte Menge benötigt Formteilgeometrie.";
+    }
   }
+
+
+  else if (
+    classification.type ===
+      "insulation"
+  ) {
+
+    quantityUnit =
+      "m²";
+
+
+    quantityNote =
+      "Dämmung/Isolierung: Fläche abhängig von Host-Geometrie.";
+  }
+
+
+  else if (
+    classification.type !==
+      "unknown"
+  ) {
+
+    quantityUnit =
+      "St.";
+
+
+    quantity =
+      1;
+
+
+    quantityNote =
+      "Bauteil: Stück.";
+  }
+
+
+  const fallbackTerms =
+
+    [
+      productType,
+      name,
+      description,
+      manufacturer
+    ]
+      .filter(
+        (
+          value
+        ):
+          value is string =>
+            Boolean(
+              value &&
+              value.trim()
+            )
+      )
+      .slice(
+        0,
+        2
+      );
+
+
+  const bsddTerms =
+
+    Array.from(
+      new Set(
+        [
+          ...classification.bsdd,
+          ...fallbackTerms
+        ]
+      )
+    )
+      .slice(
+        0,
+        2
+      );
 
 
   return {
 
-    type:
-      classification.type,
+    bsddTerms,
 
-    label:
-      classification.label,
+    analysis: {
 
-    ifcType,
+      domain:
+        classification.domain,
 
-    predefinedType,
+      type:
+        classification.type,
 
-    guid,
+      label:
+        classification.label,
 
-    runtimeId,
+      ifcType,
 
-    name,
+      predefinedType,
 
-    description,
+      guid,
 
-    objectType,
+      runtimeId,
 
-    manufacturer,
+      name,
 
-    productType,
+      description,
 
-    tag,
+      objectType,
 
-    layer,
+      manufacturer,
 
-    modelName,
+      productType,
 
-    system,
+      tag,
 
-    storey,
+      layer,
 
-    ...dimensions,
+      modelName,
 
-    lengthMm,
+      system,
 
-    insulationMm,
+      storey,
 
-    airflowLs,
+      ...dimension,
 
-    airflowM3h,
+      lengthMm,
 
-    areaM2,
+      insulationMm,
 
-    velocityMs,
+      airflowLs,
 
-    pressureLossPa,
+      airflowM3h,
 
-    zeta,
+      areaM2,
 
-    quantityUnit,
+      velocityMs,
 
-    quantity,
+      pressureLossPa,
 
-    quantityNote,
+      zeta,
 
-    confidence:
-      classification.confidence,
+      quantityUnit,
 
-    matchedBy:
-      classification.matchedBy,
+      quantity,
 
-    rawProperties:
-      flat
+      quantityNote,
+
+      confidence:
+        classification.confidence,
+
+      matchedBy:
+        classification.matchedBy,
+
+      vdi3805Scope:
+        vdiScope(
+          classification.domain
+        ),
+
+      bimStatus:
+        "local-only",
+
+      rawProperties:
+        flat
+    }
   };
 }
 
 
 /* =========================================================
-   SELECTION
+   bSDD / ETIM LIVE ENRICHMENT
 ========================================================= */
 
-export function analyzeTgaSelection(
-  selection: unknown[]
-): TgaAnalysis[] {
+const BSDD_API =
+  "https://api.bsdd.buildingsmart.org";
 
-  const result:
-    TgaAnalysis[] = [];
+
+const bsddCache =
+  new Map<
+    string,
+    {
+      expires:
+        number;
+
+      value:
+        BsddClassMatch[];
+    }
+  >();
+
+
+function bsddScore(
+  item:
+    BsddClassMatch,
+
+  analysis:
+    TgaAnalysis,
+
+  query:
+    string
+): number {
+
+  let score =
+    0;
+
+
+  const normalizedQuery =
+    norm(
+      query
+    );
+
+
+  const normalizedName =
+    norm(
+      item.name
+    );
+
+
+  const normalizedDescription =
+    norm(
+      item.description
+    );
+
+
+  const dictionary =
+    norm(
+      `${item.dictionaryName ?? ""} ${item.dictionaryUri ?? ""}`
+    );
+
+
+  if (
+    normalizedName ===
+    normalizedQuery
+  ) {
+
+    score +=
+      50;
+  }
+
+  else if (
+    normalizedName
+      .includes(
+        normalizedQuery
+      ) ||
+
+    normalizedQuery
+      .includes(
+        normalizedName
+      )
+  ) {
+
+    score +=
+      30;
+  }
+
+
+  if (
+    normalizedDescription
+      .includes(
+        normalizedQuery
+      )
+  ) {
+
+    score +=
+      10;
+  }
+
+
+  if (
+    dictionary.includes(
+      "etim"
+    )
+  ) {
+
+    score +=
+      25;
+  }
+
+
+  if (
+    dictionary.includes(
+      "ifc"
+    ) ||
+
+    dictionary.includes(
+      "buildingsmart"
+    )
+  ) {
+
+    score +=
+      10;
+  }
+
+
+  const localIfc =
+    norm(
+      analysis.ifcType
+    );
+
+
+  if (
+    localIfc &&
+
+    item
+      .relatedIfcEntityNames
+      ?.some(
+        (
+          ifc
+        ) =>
+          norm(
+            ifc
+          ) ===
+          localIfc
+      )
+  ) {
+
+    score +=
+      35;
+  }
+
+
+  return score;
+}
+
+
+async function searchBsdd(
+  query:
+    string,
+
+  analysis:
+    TgaAnalysis
+): Promise<BsddClassMatch[]> {
+
+  const cacheKey =
+    `${query}|${analysis.ifcType ?? ""}`;
+
+
+  const cached =
+    bsddCache.get(
+      cacheKey
+    );
+
+
+  if (
+    cached &&
+    cached.expires >
+      Date.now()
+  ) {
+
+    return cached.value;
+  }
+
+
+  const url =
+    new URL(
+      "/api/Class/Search/v1",
+      BSDD_API
+    );
+
+
+  url.searchParams.set(
+    "SearchText",
+    query
+  );
+
+
+  url.searchParams.set(
+    "Limit",
+    "20"
+  );
+
+
+  const controller =
+    new AbortController();
+
+
+  const timer =
+    setTimeout(
+      () =>
+        controller.abort(),
+      3500
+    );
+
+
+  try {
+
+    const response =
+      await fetch(
+        url,
+        {
+
+          headers: {
+
+            Accept:
+              "application/json",
+
+            "X-User-Agent":
+              "AgentEyes/2.0"
+          },
+
+          signal:
+            controller.signal
+        }
+      );
+
+
+    if (
+      !response.ok
+    ) {
+
+      throw new Error(
+        `bSDD HTTP ${response.status}`
+      );
+    }
+
+
+    const payload =
+      await response.json()
+      as
+        Record<
+          string,
+          unknown
+        >;
+
+
+    const classes =
+      Array.isArray(
+        payload.classes
+      )
+        ? payload.classes
+        : [];
+
+
+    const items =
+
+      classes
+
+        .filter(
+          (
+            value
+          ):
+            value is
+              Record<
+                string,
+                unknown
+              > =>
+                Boolean(
+                  value &&
+                  typeof value ===
+                    "object"
+                )
+        )
+
+        .map(
+          (
+            value
+          ) => {
+
+            const item:
+              BsddClassMatch = {
+
+              name:
+                typeof value.name ===
+                  "string"
+                  ? value.name
+                  : undefined,
+
+              referenceCode:
+                typeof value.referenceCode ===
+                  "string"
+                  ? value.referenceCode
+                  : undefined,
+
+              uri:
+                typeof value.uri ===
+                  "string"
+                  ? value.uri
+                  : undefined,
+
+              description:
+                typeof value.description ===
+                  "string"
+                  ? value.description
+                  : undefined,
+
+              dictionaryName:
+                typeof value.dictionaryName ===
+                  "string"
+                  ? value.dictionaryName
+                  : undefined,
+
+              dictionaryUri:
+                typeof value.dictionaryUri ===
+                  "string"
+                  ? value.dictionaryUri
+                  : undefined,
+
+              relatedIfcEntityNames:
+                Array.isArray(
+                  value.relatedIfcEntityNames
+                )
+                  ? value
+                      .relatedIfcEntityNames
+                      .filter(
+                        (
+                          ifc
+                        ):
+                          ifc is string =>
+                            typeof ifc ===
+                              "string"
+                      )
+                  : undefined,
+
+              score:
+                0
+            };
+
+
+            item.score =
+              bsddScore(
+                item,
+                analysis,
+                query
+              );
+
+
+            return item;
+          }
+        )
+
+        .sort(
+          (
+            a,
+            b
+          ) =>
+            b.score -
+            a.score
+        )
+
+        .slice(
+          0,
+          8
+        );
+
+
+    bsddCache.set(
+      cacheKey,
+      {
+
+        expires:
+          Date.now()
+          +
+          6
+          *
+          60
+          *
+          60
+          *
+          1000,
+
+        value:
+          items
+      }
+    );
+
+
+    return items;
+  }
+
+  finally {
+
+    clearTimeout(
+      timer
+    );
+  }
+}
+
+
+/* =========================================================
+   bSDD KANN GENERISCHE IFC OBJEKTE HOCHSTUFEN
+========================================================= */
+
+function upgradeFromBsdd(
+  analysis:
+    TgaAnalysis,
+
+  matches:
+    BsddClassMatch[]
+): TgaAnalysis {
+
+  if (
+    analysis.confidence !==
+      "low" ||
+
+    !matches.length
+  ) {
+
+    return analysis;
+  }
+
+
+  const classificationText =
+    norm(
+
+      matches
+        .slice(
+          0,
+          3
+        )
+        .map(
+          (
+            item
+          ) =>
+            `${item.name ?? ""} ${item.description ?? ""}`
+        )
+        .join(
+          " "
+        )
+    );
+
+
+  const rule =
+    RULES.find(
+      (
+        candidate
+      ) =>
+
+        (
+          candidate.bsdd ||
+          []
+        )
+          .some(
+            (
+              term
+            ) =>
+              classificationText
+                .includes(
+                  norm(
+                    term
+                  )
+                )
+          )
+    );
+
+
+  if (!rule) {
+
+    return analysis;
+  }
+
+
+  return {
+
+    ...analysis,
+
+    domain:
+      rule.domain,
+
+    type:
+      rule.type,
+
+    label:
+      rule.label,
+
+    confidence:
+      "medium",
+
+    matchedBy:
+      [
+        ...analysis.matchedBy,
+        "bSDD/ETIM"
+      ],
+
+    vdi3805Scope:
+      vdiScope(
+        rule.domain
+      )
+  };
+}
+
+
+/* =========================================================
+   ENRICHMENT EINES BAUTEILS
+========================================================= */
+
+async function enrich(
+  local: {
+
+    analysis:
+      TgaAnalysis;
+
+    bsddTerms:
+      string[];
+  }
+): Promise<TgaAnalysis> {
+
+  const analysis =
+    local.analysis;
+
+
+  if (
+    !local.bsddTerms.length
+  ) {
+
+    return analysis;
+  }
+
+
+  try {
+
+    const searches =
+      await Promise.allSettled(
+
+        local.bsddTerms
+          .map(
+            (
+              term
+            ) =>
+              searchBsdd(
+                term,
+                analysis
+              )
+          )
+      );
+
+
+    const allMatches =
+
+      searches
+        .flatMap(
+          (
+            result
+          ) =>
+            result.status ===
+              "fulfilled"
+              ? result.value
+              : []
+        )
+        .sort(
+          (
+            a,
+            b
+          ) =>
+            b.score -
+            a.score
+        );
+
+
+    const unique =
+
+      Array.from(
+
+        new Map(
+
+          allMatches
+            .filter(
+              (
+                item
+              ) =>
+                item.uri
+            )
+            .map(
+              (
+                item
+              ) =>
+                [
+                  item.uri!,
+                  item
+                ]
+            )
+        )
+        .values()
+      )
+
+      .slice(
+        0,
+        6
+      );
+
+
+    const etim =
+
+      unique
+        .filter(
+          (
+            item
+          ) =>
+            norm(
+              `${item.dictionaryName ?? ""} ${item.dictionaryUri ?? ""}`
+            )
+              .includes(
+                "etim"
+              )
+        )
+        .slice(
+          0,
+          3
+        );
+
+
+    const upgraded =
+      upgradeFromBsdd(
+
+        analysis,
+
+        etim.length
+          ? etim
+          : unique
+      );
+
+
+    return {
+
+      ...upgraded,
+
+      bsddMatches:
+        unique,
+
+      etimMatches:
+        etim,
+
+      bimStatus:
+        unique.length
+          ? "bsdd-enriched"
+          : "local-only"
+    };
+  }
+
+  catch {
+
+    return {
+
+      ...analysis,
+
+      bimStatus:
+        "bsdd-unavailable"
+    };
+  }
+}
+
+
+/* =========================================================
+   AUSWAHL ANALYSIEREN
+========================================================= */
+
+export async function analyzeTgaSelection(
+  selection:
+    unknown[]
+): Promise<TgaAnalysis[]> {
+
+  const locals:
+    {
+      analysis:
+        TgaAnalysis;
+
+      bsddTerms:
+        string[];
+    }[] = [];
 
 
   for (
@@ -2134,8 +4242,7 @@ export function analyzeTgaSelection(
 
 
       if (
-        properties.length >
-        0
+        properties.length
       ) {
 
         for (
@@ -2167,8 +4274,8 @@ export function analyzeTgaSelection(
           };
 
 
-          result.push(
-            analyzeTgaObject(
+          locals.push(
+            analyzeLocal(
               merged
             )
           );
@@ -2180,13 +4287,51 @@ export function analyzeTgaSelection(
     }
 
 
-    result.push(
-      analyzeTgaObject(
+    locals.push(
+      analyzeLocal(
         entryValue
       )
     );
   }
 
 
-  return result;
+  /*
+   * Live-bSDD nur für die ersten 6 ausgewählten Objekte.
+   * Dadurch wird eine große Mehrfachauswahl nicht mit
+   * Dutzenden API-Aufrufen blockiert.
+   *
+   * Alle weiteren Objekte werden trotzdem lokal analysiert.
+   */
+  const head =
+    locals.slice(
+      0,
+      6
+    );
+
+
+  const tail =
+    locals
+      .slice(
+        6
+      )
+      .map(
+        (
+          item
+        ) =>
+          item.analysis
+      );
+
+
+  return [
+
+    ...(
+      await Promise.all(
+        head.map(
+          enrich
+        )
+      )
+    ),
+
+    ...tail
+  ];
 }
