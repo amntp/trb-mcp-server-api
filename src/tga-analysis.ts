@@ -44,6 +44,9 @@ export interface TgaAnalysis {
   areaM2?: number;
   velocityMs?: number;
 
+  pressureLossPa?: number;
+  zeta?: number;
+
   quantityUnit?: "m" | "m²" | "St.";
   quantity?: number;
   quantityNote?: string;
@@ -83,25 +86,19 @@ function isPrimitive(value: unknown): boolean {
 
 
 /**
- * Converts Trimble object properties into a searchable flat dictionary.
+ * Wandelt die Trimble-Property-Struktur in ein flaches,
+ * durchsuchbares Dictionary um.
  *
- * Important:
- *
- * Trimble often supplies properties like:
+ * Beispiel Trimble:
  *
  * {
- *   name: "ConnectionSize_mm",
- *   value: "500/300"
+ *   name: "Geom-Side 1 (mm)",
+ *   value: "250"
  * }
  *
- * This function creates:
+ * wird zu:
  *
- * ConnectionSize_mm = "500/300"
- *
- * instead of only:
- *
- * propertySets.0.props.0.name
- * propertySets.0.props.0.value
+ * "Geom-Side 1 (mm)" = "250"
  */
 function flattenProperties(
   value: unknown,
@@ -113,27 +110,19 @@ function flattenProperties(
     return out;
   }
 
-
   if (Array.isArray(value)) {
-
     value.forEach((item, index) => {
-
       flattenProperties(
         item,
-        prefix
-          ? `${prefix}.${index}`
-          : String(index),
+        prefix ? `${prefix}.${index}` : String(index),
         out
       );
-
     });
 
     return out;
   }
 
-
   if (typeof value !== "object") {
-
     if (prefix) {
       out[prefix] = value;
     }
@@ -141,14 +130,11 @@ function flattenProperties(
     return out;
   }
 
-
-  const obj =
-    value as Record<string, unknown>;
+  const obj = value as Record<string, unknown>;
 
 
   /*
-   * Standard Trimble property pair:
-   *
+   * Trimble Property:
    * { name: "...", value: "..." }
    */
   if (
@@ -157,36 +143,20 @@ function flattenProperties(
     isPrimitive(obj.value)
   ) {
 
-    const propertyName =
-      String(obj.name).trim();
+    const propertyName = String(obj.name).trim();
 
     if (propertyName) {
-
-      /*
-       * Plain property name.
-       *
-       * First occurrence wins because several property sets
-       * can contain fields with the same name.
-       */
       if (
         !Object.prototype.hasOwnProperty.call(
           out,
           propertyName
         )
       ) {
-        out[propertyName] =
-          obj.value;
+        out[propertyName] = obj.value;
       }
 
-
-      /*
-       * Also retain its full hierarchical path.
-       */
       if (prefix) {
-
-        out[
-          `${prefix}.${propertyName}`
-        ] = obj.value;
+        out[`${prefix}.${propertyName}`] = obj.value;
       }
     }
 
@@ -195,10 +165,10 @@ function flattenProperties(
 
 
   /*
-   * Property group:
+   * Trimble Property Group:
    *
    * {
-   *   name: "MagiCAD",
+   *   name: "Pset MEP",
    *   props: [...]
    * }
    */
@@ -207,8 +177,7 @@ function flattenProperties(
     Array.isArray(obj.props)
   ) {
 
-    const groupName =
-      String(obj.name).trim();
+    const groupName = String(obj.name).trim();
 
     for (const prop of obj.props) {
 
@@ -217,8 +186,7 @@ function flattenProperties(
         typeof prop === "object"
       ) {
 
-        const p =
-          prop as Record<string, unknown>;
+        const p = prop as Record<string, unknown>;
 
         if (
           typeof p.name === "string" &&
@@ -228,8 +196,7 @@ function flattenProperties(
           )
         ) {
 
-          const propertyName =
-            String(p.name).trim();
+          const propertyName = String(p.name).trim();
 
           if (propertyName) {
 
@@ -239,13 +206,10 @@ function flattenProperties(
                 propertyName
               )
             ) {
-              out[propertyName] =
-                p.value;
+              out[propertyName] = p.value;
             }
 
-
             if (groupName) {
-
               out[
                 `${groupName}.${propertyName}`
               ] = p.value;
@@ -257,9 +221,6 @@ function flattenProperties(
   }
 
 
-  /*
-   * Continue recursively through the remaining object.
-   */
   for (
     const [key, child]
     of Object.entries(obj)
@@ -272,12 +233,10 @@ function flattenProperties(
       continue;
     }
 
-
     const path =
       prefix
         ? `${prefix}.${key}`
         : key;
-
 
     if (
       child !== null &&
@@ -292,11 +251,9 @@ function flattenProperties(
 
     } else {
 
-      out[path] =
-        child;
+      out[path] = child;
     }
   }
-
 
   return out;
 }
@@ -311,30 +268,25 @@ function findValue(
   aliases: string[]
 ): unknown {
 
-  const entries =
-    Object.entries(flat);
+  const entries = Object.entries(flat);
 
 
   /*
-   * Exact property-name match first.
+   * Exakter Feldname zuerst.
    */
   for (const alias of aliases) {
 
-    const wanted =
-      normalizeText(alias);
+    const wanted = normalizeText(alias);
 
+    const found = entries.find(([key]) => {
 
-    const found =
-      entries.find(([key]) => {
+      const last =
+        normalizeText(
+          key.split(".").pop()
+        );
 
-        const last =
-          normalizeText(
-            key.split(".").pop()
-          );
-
-        return last === wanted;
-      });
-
+      return last === wanted;
+    });
 
     if (found) {
       return found[1];
@@ -343,13 +295,11 @@ function findValue(
 
 
   /*
-   * Then full-path partial match.
+   * Danach Teiltreffer im vollständigen Pfad.
    */
   for (const alias of aliases) {
 
-    const wanted =
-      normalizeText(alias);
-
+    const wanted = normalizeText(alias);
 
     const found =
       entries.find(([key]) =>
@@ -357,12 +307,10 @@ function findValue(
           .includes(wanted)
       );
 
-
     if (found) {
       return found[1];
     }
   }
-
 
   return undefined;
 }
@@ -374,11 +322,7 @@ function textValue(
 ): string | undefined {
 
   const value =
-    findValue(
-      flat,
-      aliases
-    );
-
+    findValue(flat, aliases);
 
   if (
     value === undefined ||
@@ -387,10 +331,7 @@ function textValue(
     return undefined;
   }
 
-
-  const text =
-    String(value).trim();
-
+  const text = String(value).trim();
 
   return text || undefined;
 }
@@ -407,7 +348,6 @@ function numberValue(
     return value;
   }
 
-
   if (
     value === null ||
     value === undefined
@@ -415,26 +355,20 @@ function numberValue(
     return undefined;
   }
 
-
   let text =
     String(value).trim();
-
 
   if (!text) {
     return undefined;
   }
 
-
-  text =
-    text
-      .replace(/\s/g, "")
-      .replace(",", ".")
-      .replace(/[^\d.+-]/g, "");
-
+  text = text
+    .replace(/\s/g, "")
+    .replace(",", ".")
+    .replace(/[^\d.+-]/g, "");
 
   const n =
     Number.parseFloat(text);
-
 
   return Number.isFinite(n)
     ? n
@@ -448,10 +382,7 @@ function numberByAliases(
 ): number | undefined {
 
   return numberValue(
-    findValue(
-      flat,
-      aliases
-    )
+    findValue(flat, aliases)
   );
 }
 
@@ -461,7 +392,6 @@ function searchableText(
 ): string {
 
   return normalizeText(
-
     Object.entries(flat)
       .map(
         ([key, value]) =>
@@ -478,7 +408,7 @@ function containsAny(
 ): boolean {
 
   return words.some(
-    (word) =>
+    word =>
       text.includes(
         normalizeText(word)
       )
@@ -525,10 +455,17 @@ function parseDimensions(
   diameterMm?: number;
 } {
 
+  /*
+   * Trimble Nova:
+   * Geom-Side 1 (mm)
+   * Geom-Side 2 (mm)
+   */
   let widthMm =
     numberByAliases(
       flat,
       [
+        "Geom-Side 1 (mm)",
+        "Geom-Side 1",
         "Width_mm",
         "Width",
         "Breite",
@@ -543,6 +480,8 @@ function parseDimensions(
     numberByAliases(
       flat,
       [
+        "Geom-Side 2 (mm)",
+        "Geom-Side 2",
         "Height_mm",
         "Height",
         "Hoehe",
@@ -558,6 +497,8 @@ function parseDimensions(
     numberByAliases(
       flat,
       [
+        "Geom-Diameter (mm)",
+        "Geom-Diameter",
         "Diameter_mm",
         "Diameter",
         "Durchmesser",
@@ -574,7 +515,7 @@ function parseDimensions(
 
   if (raw) {
 
-    let text =
+    const text =
       raw
         .replace(",", ".")
         .replace(/×/g, "x")
@@ -582,12 +523,6 @@ function parseDimensions(
         .trim();
 
 
-    /*
-     * Round:
-     * Ø200
-     * ø200
-     * DN200
-     */
     const roundMatch =
       text.match(
         /(?:ø|⌀|dn\s*)\s*(\d+(?:\.\d+)?)/i
@@ -604,12 +539,6 @@ function parseDimensions(
     }
 
 
-    /*
-     * Rectangular:
-     * 500x300
-     * 500/300
-     * 500 × 300
-     */
     const rectangularMatch =
       text.match(
         /(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/i
@@ -621,18 +550,15 @@ function parseDimensions(
       if (
         widthMm === undefined
       ) {
-
         widthMm =
           Number(
             rectangularMatch[1]
           );
       }
 
-
       if (
         heightMm === undefined
       ) {
-
         heightMm =
           Number(
             rectangularMatch[2]
@@ -641,13 +567,6 @@ function parseDimensions(
     }
 
 
-    /*
-     * Plain value such as:
-     *
-     * 200
-     *
-     * usually represents a round connection.
-     */
     if (
       !roundMatch &&
       !rectangularMatch &&
@@ -656,17 +575,13 @@ function parseDimensions(
         .test(text)
     ) {
 
-      const n =
-        Number(text);
-
+      const n = Number(text);
 
       if (
         n > 0 &&
         n <= 3000
       ) {
-
-        diameterMm =
-          n;
+        diameterMm = n;
       }
     }
   }
@@ -727,6 +642,8 @@ function classify(
         flat,
         [
           "class",
+          "Common Type",
+          "CommonType",
           "ifcType",
           "IfcType",
           "entityType",
@@ -756,15 +673,12 @@ function classify(
       "high" |
       "medium" |
       "low" = "high"
-  ) => {
-
-    return {
-      type,
-      label,
-      confidence,
-      matchedBy: [reason]
-    };
-  };
+  ) => ({
+    type,
+    label,
+    confidence,
+    matchedBy: [reason]
+  });
 
 
   /* Brandschutzklappe */
@@ -781,12 +695,8 @@ function classify(
         "bsk"
       ]
     ) ||
-    predefined.includes(
-      "firedamper"
-    ) ||
-    predefined.includes(
-      "firesmokedamper"
-    )
+    predefined.includes("firedamper") ||
+    predefined.includes("firesmokedamper")
   ) {
 
     return hit(
@@ -828,7 +738,7 @@ function classify(
 
   if (
     ifcType.includes(
-      "ifcductsilencer"
+      "ductsilencer"
     ) ||
     containsAny(
       text,
@@ -846,7 +756,7 @@ function classify(
     return hit(
       "silencer",
       "Schalldämpfer",
-      "IfcDuctSilencer / Schalldämpfer erkannt"
+      "Schalldämpfer erkannt"
     );
   }
 
@@ -943,7 +853,7 @@ function classify(
 
   if (
     ifcType.includes(
-      "ifccovering"
+      "covering"
     ) ||
     containsAny(
       text,
@@ -960,10 +870,8 @@ function classify(
     return hit(
       "insulation",
       "Lüftungsdämmung / Isolierung",
-      "IfcCovering / Dämmung erkannt",
-      ifcType.includes(
-        "ifccovering"
-      )
+      "Dämmung erkannt",
+      ifcType.includes("covering")
         ? "high"
         : "medium"
     );
@@ -974,7 +882,7 @@ function classify(
 
   if (
     ifcType.includes(
-      "ifcdamper"
+      "damper"
     ) ||
     containsAny(
       text,
@@ -988,7 +896,7 @@ function classify(
     return hit(
       "damper_generic",
       "Lüftungsklappe",
-      "IfcDamper / Klappe erkannt",
+      "Klappe erkannt",
       "medium"
     );
   }
@@ -998,7 +906,7 @@ function classify(
 
   if (
     ifcType.includes(
-      "ifcairterminal"
+      "airterminal"
     ) ||
     containsAny(
       text,
@@ -1017,10 +925,8 @@ function classify(
     return hit(
       "air_terminal",
       "Luftauslass",
-      "IfcAirTerminal / Luftauslass erkannt",
-      ifcType.includes(
-        "ifcairterminal"
-      )
+      "Luftauslass erkannt",
+      ifcType.includes("airterminal")
         ? "high"
         : "medium"
     );
@@ -1031,7 +937,7 @@ function classify(
 
   if (
     ifcType.includes(
-      "ifcductfitting"
+      "ductfitting"
     ) ||
     containsAny(
       text,
@@ -1057,27 +963,24 @@ function classify(
     return hit(
       "duct_fitting",
       "Lüftungsformteil",
-      "IfcDuctFitting / Formteil erkannt",
-      ifcType.includes(
-        "ifcductfitting"
-      )
+      "Kanalformteil erkannt",
+      ifcType.includes("ductfitting")
         ? "high"
         : "medium"
     );
   }
 
 
-  /* Kanal */
+  /* Kanal / Rohr */
 
   if (
     ifcType.includes(
-      "ifcductsegment"
+      "ductsegment"
     ) ||
     containsAny(
       text,
       [
         "duct segment",
-        "kanal",
         "luftkanal",
         "lueftungskanal",
         "lüftungskanal",
@@ -1092,10 +995,8 @@ function classify(
     return hit(
       "duct_segment",
       "Lüftungskanal / Lüftungsrohr",
-      "IfcDuctSegment / Kanal erkannt",
-      ifcType.includes(
-        "ifcductsegment"
-      )
+      "Kanal / Rohr erkannt",
+      ifcType.includes("ductsegment")
         ? "high"
         : "medium"
     );
@@ -1136,6 +1037,8 @@ export function analyzeTgaObject(
       flat,
       [
         "class",
+        "Common Type",
+        "CommonType",
         "ifcType",
         "IfcType",
         "EntityType",
@@ -1158,6 +1061,8 @@ export function analyzeTgaObject(
     textValue(
       flat,
       [
+        "GUID (IFC)",
+        "GUID IFC",
         "externalId",
         "GlobalId",
         "globalId",
@@ -1184,10 +1089,11 @@ export function analyzeTgaObject(
     textValue(
       flat,
       [
-        "name",
+        "Product Name",
+        "ProductName",
         "Name",
-        "ObjectName",
-        "ProductName"
+        "name",
+        "ObjectName"
       ]
     );
 
@@ -1209,15 +1115,23 @@ export function analyzeTgaObject(
       flat,
       [
         "modelName",
-        "ModelName"
+        "ModelName",
+        "File Name"
       ]
     );
 
 
+  /*
+   * Trimble Nova nutzt beim gezeigten Modell:
+   *
+   * Tech-Medium = L_Zuluft
+   */
   const system =
     textValue(
       flat,
       [
+        "Tech-Medium",
+        "Tech Medium",
         "System",
         "SystemName",
         "System Name",
@@ -1242,7 +1156,6 @@ export function analyzeTgaObject(
         "Storey",
         "BuildingStorey",
         "Building Storey",
-        "storey",
         "Geschoss",
         "Etage",
         "Floor",
@@ -1253,10 +1166,16 @@ export function analyzeTgaObject(
     );
 
 
+  /*
+   * Trimble Nova:
+   * Geom-Length (mm)
+   */
   const lengthMm =
     numberByAliases(
       flat,
       [
+        "Geom-Length (mm)",
+        "Geom-Length",
         "Length_mm",
         "Length mm",
         "Laenge_mm",
@@ -1304,7 +1223,9 @@ export function analyzeTgaObject(
         "Flow_l_s",
         "Volumenstrom_l_s",
         "Volumenstrom_ls",
-        "DesignFlow_ls"
+        "DesignFlow_ls",
+        "VolumeFlow_ls",
+        "Volume Flow l/s"
       ]
     );
 
@@ -1320,7 +1241,9 @@ export function analyzeTgaObject(
         "Flow_m3h",
         "Volumenstrom_m3h",
         "Volumenstrom_m3_h",
-        "DesignFlow_m3h"
+        "DesignFlow_m3h",
+        "VolumeFlow_m3h",
+        "Volume Flow m3/h"
       ]
     );
 
@@ -1345,18 +1268,49 @@ export function analyzeTgaObject(
   }
 
 
+  /*
+   * Trimble Nova:
+   *
+   * Calc-Pressure loss (Pa)
+   * Calc-Zeta
+   */
+  const pressureLossPa =
+    numberByAliases(
+      flat,
+      [
+        "Calc-Pressure loss (Pa)",
+        "Calc-Pressure Loss (Pa)",
+        "Pressure loss (Pa)",
+        "Pressure Loss (Pa)",
+        "PressureLoss",
+        "Pressure Loss",
+        "Druckverlust",
+        "Druckverlust (Pa)"
+      ]
+    );
+
+
+  const zeta =
+    numberByAliases(
+      flat,
+      [
+        "Calc-Zeta",
+        "Zeta",
+        "ζ",
+        "Zeta Value"
+      ]
+    );
+
+
   let areaM2:
     number |
     undefined;
 
 
   if (
-    dimensions.shape ===
-      "rectangular" &&
-    dimensions.widthMm !==
-      undefined &&
-    dimensions.heightMm !==
-      undefined
+    dimensions.shape === "rectangular" &&
+    dimensions.widthMm !== undefined &&
+    dimensions.heightMm !== undefined
   ) {
 
     areaM2 =
@@ -1374,8 +1328,7 @@ export function analyzeTgaObject(
 
   if (
     dimensions.shape === "round" &&
-    dimensions.diameterMm !==
-      undefined
+    dimensions.diameterMm !== undefined
   ) {
 
     const diameterM =
@@ -1440,13 +1393,10 @@ export function analyzeTgaObject(
     case "duct_segment":
 
       if (
-        dimensions.shape ===
-          "rectangular" &&
+        dimensions.shape === "rectangular" &&
         lengthMm !== undefined &&
-        dimensions.widthMm !==
-          undefined &&
-        dimensions.heightMm !==
-          undefined
+        dimensions.widthMm !== undefined &&
+        dimensions.heightMm !== undefined
       ) {
 
         quantityUnit =
@@ -1476,8 +1426,7 @@ export function analyzeTgaObject(
 
 
       else if (
-        dimensions.shape ===
-          "round" &&
+        dimensions.shape === "round" &&
         lengthMm !== undefined
       ) {
 
@@ -1500,8 +1449,7 @@ export function analyzeTgaObject(
     case "duct_fitting":
 
       if (
-        dimensions.shape ===
-          "round"
+        dimensions.shape === "round"
       ) {
 
         quantityUnit =
@@ -1607,6 +1555,10 @@ export function analyzeTgaObject(
 
     velocityMs,
 
+    pressureLossPa,
+
+    zeta,
+
     quantityUnit,
 
     quantity,
@@ -1629,20 +1581,6 @@ export function analyzeTgaObject(
    SELECTION ANALYSIS
 ========================================================= */
 
-/**
- * A ViewerSelectionEntry can contain several selected IFC objects:
- *
- * {
- *   modelId,
- *   objectRuntimeIds: [...],
- *   properties: [
- *     { runtimeId, class, name, propertySets... },
- *     ...
- *   ]
- * }
- *
- * Analyse every actual object individually.
- */
 export function analyzeTgaSelection(
   selection: unknown[]
 ): TgaAnalysis[] {
@@ -1658,8 +1596,7 @@ export function analyzeTgaSelection(
 
     if (
       entryValue &&
-      typeof entryValue ===
-        "object"
+      typeof entryValue === "object"
     ) {
 
       const entry =
@@ -1676,8 +1613,7 @@ export function analyzeTgaSelection(
 
 
       /*
-       * Normal path:
-       * one analysis per selected IFC object.
+       * Ein Analyseergebnis je tatsächlich ausgewähltem IFC-Objekt.
        */
       if (
         properties.length > 0
@@ -1698,13 +1634,9 @@ export function analyzeTgaSelection(
 
             ...(
               objectProperties &&
-              typeof objectProperties ===
-                "object"
+              typeof objectProperties === "object"
                 ? objectProperties as
-                    Record<
-                      string,
-                      unknown
-                    >
+                    Record<string, unknown>
                 : {}
             )
           };
@@ -1724,8 +1656,7 @@ export function analyzeTgaSelection(
 
 
     /*
-     * Fallback if an entry does not contain detailed
-     * getObjectProperties data.
+     * Fallback ohne detaillierte Properties.
      */
     result.push(
       analyzeTgaObject(
