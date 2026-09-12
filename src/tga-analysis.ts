@@ -3694,10 +3694,8 @@ async function searchBsdd(
 
   if (
     cached &&
-    cached.expires >
-      Date.now()
+    cached.expires > Date.now()
   ) {
-
     return cached.value;
   }
 
@@ -3754,9 +3752,7 @@ async function searchBsdd(
       );
 
 
-    if (
-      !response.ok
-    ) {
+    if (!response.ok) {
 
       throw new Error(
         `bSDD HTTP ${response.status}`
@@ -3764,132 +3760,110 @@ async function searchBsdd(
     }
 
 
-    const payload =
-      await response.json()
-      as
-        Record<
-          string,
-          unknown
-        >;
+    /*
+     * Absichtlich hier "any":
+     * Antwort kommt von externer bSDD API.
+     * Danach prüfen wir jedes Feld einzeln.
+     */
+    const payload: any =
+      await response.json();
 
 
-    const rawClasses:
-      unknown[] =
-        Array.isArray(
-          payload.classes
-        )
-          ? payload.classes
-          : [];
-
-
-    const classRecords:
-      Record<string, unknown>[] =
-        rawClasses.filter(
-          (
-            value: unknown
-          ):
-            value is
-              Record<string, unknown> => {
-
-            return (
-              typeof value ===
-                "object"
-              &&
-              value !== null
-            );
-          }
-        );
+    const rawClasses: any[] =
+      Array.isArray(
+        payload?.classes
+      )
+        ? payload.classes
+        : [];
 
 
     const items:
-      BsddClassMatch[] =
-        classRecords.map(
-          (
-            value:
-              Record<string, unknown>
-          ): BsddClassMatch => {
-
-            const relatedIfcRaw =
-              value.relatedIfcEntityNames;
+      BsddClassMatch[] = [];
 
 
-            const relatedIfcEntityNames:
-              string[] |
-              undefined =
+    for (
+      const value
+      of rawClasses
+    ) {
 
-                Array.isArray(
-                  relatedIfcRaw
+      if (
+        !value ||
+        typeof value !== "object"
+      ) {
+        continue;
+      }
+
+
+      const relatedIfcEntityNames:
+        string[] | undefined =
+
+          Array.isArray(
+            value.relatedIfcEntityNames
+          )
+
+            ? value.relatedIfcEntityNames
+                .filter(
+                  (
+                    ifc: unknown
+                  ): ifc is string =>
+                    typeof ifc === "string"
                 )
 
-                  ? relatedIfcRaw.filter(
-                      (
-                        ifc: unknown
-                      ):
-                        ifc is string =>
-                          typeof ifc ===
-                          "string"
-                    )
-
-                  : undefined;
+            : undefined;
 
 
-            const item:
-              BsddClassMatch = {
+      const item:
+        BsddClassMatch = {
 
-              name:
-                typeof value.name ===
-                  "string"
-                  ? value.name
-                  : undefined,
+        name:
+          typeof value.name === "string"
+            ? value.name
+            : undefined,
 
-              referenceCode:
-                typeof value.referenceCode ===
-                  "string"
-                  ? value.referenceCode
-                  : undefined,
+        referenceCode:
+          typeof value.referenceCode === "string"
+            ? value.referenceCode
+            : undefined,
 
-              uri:
-                typeof value.uri ===
-                  "string"
-                  ? value.uri
-                  : undefined,
+        uri:
+          typeof value.uri === "string"
+            ? value.uri
+            : undefined,
 
-              description:
-                typeof value.description ===
-                  "string"
-                  ? value.description
-                  : undefined,
+        description:
+          typeof value.description === "string"
+            ? value.description
+            : undefined,
 
-              dictionaryName:
-                typeof value.dictionaryName ===
-                  "string"
-                  ? value.dictionaryName
-                  : undefined,
+        dictionaryName:
+          typeof value.dictionaryName === "string"
+            ? value.dictionaryName
+            : undefined,
 
-              dictionaryUri:
-                typeof value.dictionaryUri ===
-                  "string"
-                  ? value.dictionaryUri
-                  : undefined,
+        dictionaryUri:
+          typeof value.dictionaryUri === "string"
+            ? value.dictionaryUri
+            : undefined,
 
-              relatedIfcEntityNames,
+        relatedIfcEntityNames,
 
-              score:
-                0
-            };
+        score:
+          0
+      };
 
 
-            item.score =
-              bsddScore(
-                item,
-                analysis,
-                query
-              );
-
-
-            return item;
-          }
+      item.score =
+        bsddScore(
+          item,
+          analysis,
+          query
         );
+
+
+      items.push(
+        item
+      );
+    }
 
 
     items.sort(
